@@ -4,4 +4,4 @@ app = FastAPI(title="PaymentHub API")
 
 @app.get("/heath")
 def heath_check():
-    return {"status" : "ok", "service": "paymenthub-api"}
+    return {"status" : "ok", "service": "paymenthub"}
