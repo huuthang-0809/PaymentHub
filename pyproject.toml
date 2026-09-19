@@ -1,0 +1,3 @@
+[tool.importlinter]
+root_packages=["shared_kernel", "canonical", "reconciliation", "bootstrap"]
+include_externel_packages = true
