@@ -50,7 +50,7 @@ class Money:
         exponent = CURRENCY_EXPONENTS.get(self.currency, 2)
         scaled = self.amount * (Decimal(10) ** exponent)
 
-        if scaled != self.to_integral_value(): #minor unit has no decimal part
+        if scaled != scaled.to_integral_value(): #minor unit has no decimal part
             raise ValueError(f"The amount {self.amount} exceeds the permitted precision for {self.currency}")
 
         return int(scaled)
