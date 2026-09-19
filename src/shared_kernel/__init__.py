@@ -1,5 +1,5 @@
-from .datetime import ensure_utc, now_utcm, parse_iso_utc
-from .enums import Money
+from .datetime import ensure_utc, now_utc, parse_iso_utc
+from .money import Money
 from .scope import GlobalTxnKey, ReconScopeKey
 from .enums import (
     AmountStatus,
@@ -17,6 +17,6 @@ __all__ = [
     "ReconScopeKey",
     "Money",
     "ensure_utc",
-    "now_utcm",
+    "now_utc",
     "parse_iso_utc"
 ]
