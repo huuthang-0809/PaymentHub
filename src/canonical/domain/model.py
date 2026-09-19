@@ -7,7 +7,7 @@ from shared_kernel.enums import AmountStatus, CanonicalStatus, ReconResult, TxnT
 from shared_kernel.money import Money, Region
 from shared_kernel.scope import GlobalTxnKey, ReconScopeKey
 
-@dataclass
+@dataclass(frozen=True)
 class CanonicalTransaction:
     """
     Unified transaction entity in the core payment system.

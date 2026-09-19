@@ -21,9 +21,15 @@ class Money:
 
         if not isinstance(self.amount, Decimal):
             try:
-                object.__setattr__(self, 'amount', Decimal(str(self.amount).strip()))
+                parsed_amount = Decimal(str(self.amount).strip())
+                object.__setattr__(self, 'amount', parsed_amount)
+                if not parsed_amount.is_finite():
+                    raise ValueError(f"Amount must be a finite number but got {self.amount}")
             except InvalidOperation:
                 raise ValueError(f"Can not parse amount: {self.amount}")
+
+        # Check if convert into minor is valid
+        self.to_minor()
 
         currency_upper = str(self.currency).strip().upper() if self.currency else ""
         object.__setattr__(self, 'currency', currency_upper)
@@ -54,13 +60,3 @@ class Money:
             raise ValueError(f"The amount {self.amount} exceeds the permitted precision for {self.currency}")
 
         return int(scaled)
-
-    def add(self, other: "Money") -> "Money":
-        """Adds 2 money instances of the same currency"""
-        if self.currency != other.currency:
-            raise ValueError(f"Cannot add differnce currencies: {self.currency} and {other.currency}")
-
-    def subtract(self, other: "Money") -> "Money":
-        """Subtract 2 money instances"""
-        if self.currency != other.currency:
-            raise ValueError(f"Cannot subtract differnce currencies: {self.currency} and {other.currency}")
