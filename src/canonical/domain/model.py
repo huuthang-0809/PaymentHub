@@ -4,7 +4,7 @@ from typing import Optional, Any, Dict
 
 from shared_kernel.datetime import ensure_utc
 from shared_kernel.enums import AmountStatus, CanonicalStatus, ReconResult, TxnType, Instrument, Region
-from shared_kernel.money import Money, Region
+from shared_kernel.money import Money
 from shared_kernel.scope import GlobalTxnKey, ReconScopeKey
 
 @dataclass(frozen=True)
@@ -23,7 +23,7 @@ class CanonicalTransaction:
     is_terminal: bool
     is_money_movement: bool
     is_reconcilale: bool
-    istrument: Instrument | None = None
+    instrument: Instrument | None = None
     provider_txn_id: str | None = None
     provider_ref_id: str | None = None
     merchant_ref: str | None = None
