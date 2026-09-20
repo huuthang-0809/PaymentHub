@@ -24,6 +24,7 @@ class CanonicalTransaction:
     is_money_movement: bool
     is_reconcilale: bool
     instrument: Instrument | None = None
+    istrument: Instrument | None = None
     provider_txn_id: str | None = None
     provider_ref_id: str | None = None
     merchant_ref: str | None = None
