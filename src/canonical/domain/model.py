@@ -22,9 +22,8 @@ class CanonicalTransaction:
     created_at: datetime
     is_terminal: bool
     is_money_movement: bool
-    is_reconcilale: bool
+    is_reconcilable: bool
     instrument: Instrument | None = None
-    istrument: Instrument | None = None
     provider_txn_id: str | None = None
     provider_ref_id: str | None = None
     merchant_ref: str | None = None
@@ -48,14 +47,14 @@ class CanonicalTransaction:
     is_test_data: bool = False
     raw: dict[str, Any] = field(default_factory=dict)
 
-    def __pos_init__(self) -> None:
+    def __post_init__(self) -> None:
         if not self.provider or not self.provider.strip():
             raise ValueError("Provider cannot be empty.")
 
         if not self.txn_id or not self.txn_id.strip():
-            raise ValueError("tnx_id cannot be empty")
+            raise ValueError("txn_id cannot be empty")
 
-        if self.region is Region.ASIA and not self.tenant_id:
+        if self.region == Region.ASIA and not self.tenant_id:
             raise ValueError("ASIA requires tenant_id")
 
         if self.amount_minor is not None and (isinstance(self.amount_minor, bool) or not isinstance(self.amount_minor, int)):
@@ -66,13 +65,27 @@ class CanonicalTransaction:
 
         #standardlize text field
         object.__setattr__(self, "provider", self.provider.strip().upper())
-        object.__setattr__(self, "provider_tnx_id", self.provider_txn_id.strip())
+        if self.provider_txn_id is not None:
+            object.__setattr__(
+                self,
+                "provider_txn_id",
+                self.provider_txn_id.strip(),
+            )
 
         #Guarantee timezone aware
         object.__setattr__(self, "created_at", ensure_utc(self.created_at))
-        object.__setattr__(self, "updated_at", ensure_utc(self.updated_at))
-        object.__setattr__(self, "paid_at", ensure_utc(self.paid_at))
-        object.__setattr__(self, "provider_created_at", ensure_utc(self.provider_created_at))
+        if self.updated_at is not None:
+            object.__setattr__(self, "updated_at", ensure_utc(self.updated_at))
+
+        if self.paid_at is not None:
+            object.__setattr__(self, "paid_at", ensure_utc(self.paid_at))
+
+        if self.provider_created_at is not None:
+            object.__setattr__(
+                self,
+                "provider_created_at",
+                ensure_utc(self.provider_created_at),
+            )
 
     @property
     def global_key(self) -> GlobalTxnKey:

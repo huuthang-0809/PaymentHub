@@ -15,38 +15,52 @@ class Money:
     amount: Decimal
     currency: str
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if isinstance(self.amount, float):
-            raise TypeError("Strictly prohibited floating-point values for Money")
+            raise TypeError(
+                "Strictly prohibited floating-point values for Money"
+            )
 
-        if not isinstance(self.amount, Decimal):
-            try:
-                parsed_amount = Decimal(str(self.amount).strip())
-                object.__setattr__(self, 'amount', parsed_amount)
-                if not parsed_amount.is_finite():
-                    raise ValueError(f"Amount must be a finite number but got {self.amount}")
-            except InvalidOperation:
-                raise ValueError(f"Can not parse amount: {self.amount}")
+        try:
+            parsed_amount = (
+                self.amount
+                if isinstance(self.amount, Decimal)
+                else Decimal(str(self.amount).strip())
+            )
+        except (InvalidOperation, ValueError):
+            raise ValueError(f"Cannot parse amount: {self.amount}")
 
-        # Check if convert into minor is valid
+        if not parsed_amount.is_finite():
+            raise ValueError(
+                f"Amount must be a finite number but got {parsed_amount}"
+            )
+
+        currency_upper = (
+            str(self.currency).strip().upper()
+            if self.currency
+            else ""
+        )
+
+        if currency_upper not in CURRENCY_EXPONENTS:
+            raise ValueError(
+                f"Unsupported or unknown currency: {currency_upper}"
+            )
+
+        object.__setattr__(self, "amount", parsed_amount)
+        object.__setattr__(self, "currency", currency_upper)
+
         self.to_minor()
-
-        currency_upper = str(self.currency).strip().upper() if self.currency else ""
-        object.__setattr__(self, 'currency', currency_upper)
-
-        if currency_upper not in  CURRENCY_EXPONENTS:
-            raise ValueError(f"Unsupported or unknow currency: {currency_upper}")
 
     @classmethod
     def from_minor(cls, amount_minor:int, currency: str) -> "Money":
         """
         Create a Money instance from minor units.
         """
-        if isinstance(amount_minor, float):
-            raise TypeError("Strictly prohibited floating-point values for Money")
+        if isinstance(amount_minor, bool) or not isinstance(amount_minor, int):
+            raise TypeError("amount_minor must be an integer")
         currency_upper = currency.strip().upper() if currency else ""
         if currency_upper not in CURRENCY_EXPONENTS:
-            raise ValueError(f"Unsupported or unknow currency: {currency_upper}")
+            raise ValueError(f"Unsupported or unknown currency: {currency_upper}")
 
         exponent = CURRENCY_EXPONENTS[currency_upper]
         amount = Decimal(amount_minor) / (Decimal(10) ** exponent)
