@@ -13,12 +13,23 @@ class MongoAsiaSource:
         collection: str,
         mapping: AsiaMapping | None = None
     ) -> None:
-        if not tenant_databases or not collection:
+        if not tenant_databases or not collection.strip():
             raise ValueError("tenant databases and collection are required")
+        resolved_mapping = mapping or AsiaMapping()
+        missing_provider = set(tenant_databases) - set(
+            resolved_mapping.tenant_providers
+        )
+        missing_currency = set(tenant_databases) - set(
+            resolved_mapping.tenant_currencies
+        )
+        if missing_provider or missing_currency:
+            missing = sorted(missing_provider | missing_currency)
+            raise ValueError(f"missing Asia mapping for tenants: {missing}")
+
         self.client = client
         self.tenant_databases = dict(tenant_databases)
-        self.collection = collection
-        self.mapping = mapping or AsiaMapping()
+        self.collection = collection.strip()
+        self.mapping = resolved_mapping
 
     def get_transactions(
         self,
@@ -27,9 +38,10 @@ class MongoAsiaSource:
         provider: str,
         business_date: date
     ) -> tuple[CanonicalTransaction, ...]:
-        if region is not Region.ASIA or tenant_id not in self.tenant_databases:
+        if region != Region.ASIA or tenant_id not in self.tenant_databases:
             raise ValueError("configured Asia tenant is required")
-        if provider != self.mapping.tenant_providers[tenant_id]:
+        expected_provider = self.mapping.tenant_providers[tenant_id]
+        if provider.strip().upper() != expected_provider.strip().upper():
             return ()
         start = datetime.combine(business_date, time.min, tzinfo=UTC)
         end = start + timedelta(days=1)
@@ -42,10 +54,11 @@ class MongoAsiaSource:
         rows: list[CanonicalTransaction] = []
         for tenant_id in sorted(self.tenant_databases):
             rows.extend(
-                (
-                    self.get_transactions(
-                        Region.ASIA, tenant_id, self.mapping.tenant_providers[tenant_id], business_date
-                    )
+                self.get_transactions(
+                    Region.ASIA,
+                    tenant_id,
+                    self.mapping.tenant_providers[tenant_id],
+                    business_date,
                 )
             )
         return tuple(rows)

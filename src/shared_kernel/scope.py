@@ -14,7 +14,7 @@ class GlobalTxnKey:
 
     region: Region
     tenant_id: Optional[str]
-    tnx_id: str
+    txn_id: str
 
     def __post_init__(self) -> None:
         if isinstance(self.region, str) and not isinstance(self.region, Region):
@@ -24,8 +24,8 @@ class GlobalTxnKey:
             except ValueError:
                 raise ValueError(f"Unsupported region: {self.region}")
         _validate_region_tenant(self.region, self.tenant_id)
-        if not self.tnx_id or not self.tnx_id.strip():
-            raise ValueError("tnx_id cannot be empty")
+        if not self.txn_id or not self.txn_id.strip():
+            raise ValueError("txn_id cannot be empty")
 
 @dataclass(frozen=True)
 class ReconScopeKey:

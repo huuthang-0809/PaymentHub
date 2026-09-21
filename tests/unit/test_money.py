@@ -64,19 +64,19 @@ def test_currency_normalization() -> None:
 
 def test_missing_or_empty_currency() -> None:
     """Test nhánh `if self.currency else ""` khi currency là None hoặc chuỗi rỗng"""
-    with pytest.raises(ValueError, match="Unsupported or unknow currency"):
+    with pytest.raises(ValueError, match="Unsupported or unknown currency"):
         Money("10", None)
-    with pytest.raises(ValueError, match="Unsupported or unknow currency"):
+    with pytest.raises(ValueError, match="Unsupported or unknown currency"):
         Money("10", "")
         
-    with pytest.raises(ValueError, match="Unsupported or unknow currency"):
+    with pytest.raises(ValueError, match="Unsupported or unknown currency"):
         Money.from_minor(100, None)
-    with pytest.raises(ValueError, match="Unsupported or unknow currency"):
+    with pytest.raises(ValueError, match="Unsupported or unknown currency"):
         Money.from_minor(100, "")
 
 def test_from_minor_exceptions() -> None:
-    with pytest.raises(TypeError, match="Strictly prohibited floating-point"):
+    with pytest.raises(TypeError, match="amount_minor must be an integer"):
         Money.from_minor(1.5, "USD") # type: ignore
         
-    with pytest.raises(ValueError, match="Unsupported or unknow currency: XYZ"):
+    with pytest.raises(ValueError, match="Unsupported or unknown currency: XYZ"):
         Money.from_minor(100, "XYZ")
