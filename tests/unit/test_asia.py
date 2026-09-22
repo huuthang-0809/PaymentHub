@@ -63,6 +63,8 @@ def test_happy_mapping_normalizes_the_document() -> None:
     assert transaction.status is CanonicalStatus.SUCCESS
     assert transaction.instrument is Instrument.QR
     assert transaction.provider == "ESPAY"
+    assert transaction.merchant_ref == "a1"
+    assert transaction.provider_merchant_id == "provider-merchant"
     assert transaction.order_ids == ("bill1", "bill2")
     assert transaction.callback_attempts == 1
     assert transaction.updated_at == datetime(2026, 9, 21, 1, tzinfo=UTC)
@@ -128,6 +130,21 @@ def test_refund_does_not_reuse_legacy_external_transaction_id() -> None:
     assert transaction.refund_of == "parent-1"
     assert transaction.provider_txn_id is None
     assert transaction.provider_ref_id == "r1"
+
+
+def test_refund_without_payment_reference_can_fall_back_to_its_id() -> None:
+    transaction = map_document(
+        valid_document(
+            Type=8,
+            RefundFor="parent-1",
+            ExternalTxnId="parent-provider-id",
+            PaymentRefId=None,
+        )
+    )
+
+    assert transaction.provider_txn_id is None
+    assert transaction.provider_ref_id is None
+    assert transaction.merchant_ref == "a1"
 
 
 def test_synthetic_flag_requires_verified_configuration() -> None:
