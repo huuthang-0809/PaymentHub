@@ -1,0 +1,35 @@
+from dataclasses import dataclass
+from enum import Enum
+from typing import Protocol
+
+from reconciliation.domain import ProviderTransaction
+
+class ValidationCode(str, Enum):
+    MISSING_COLUMN = "MISSING_COLUMN"
+    INVALID_TYPE = "INVALID_TYPE"
+    INVALID_DATE = "INVALID_DATE"
+    UNKNOWN_CURRENCY = "UNKNOWN_CURRENCY"
+    NEGATIVE_AMOUNT = "NEGATIVE_AMOUNT"
+    EMPTY_ROW = "EMPTY_ROW"
+    DUPLICATE_ROW = "DUPLICATE_ROW"
+    INVALID_ENCODING = "INVALID_ENCODING"
+    INVALID_DELIMITER = "INVALID_DELIMITER"
+
+@dataclass(frozen=True, slots =True)
+class ValidationIssue:
+    row: int | None
+    field: str | None
+    code: ValidationCode
+    message: str
+
+@dataclass(frozen=True, slots=True)
+class ParseReport:
+    rows: tuple[ProviderTransaction, ...]
+    issues: tuple[ValidationIssue, ...]
+
+    @property
+    def valid(self) -> bool:
+        return not self.issues
+
+class ProviderStatementParse(Protocol):
+    def parse(self, content: bytes, source_file: str) -> ParseReport: ...
