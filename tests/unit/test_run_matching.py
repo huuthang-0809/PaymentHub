@@ -5,6 +5,7 @@ from uuid import UUID
 
 from bootstrap.run_matching import run_matching
 from canonical.adapters.vn import VNMapping, vn_to_canonical
+from canonical.domain import CanonicalTransaction
 from shared_kernel import Region
 from shared_kernel.enums import Instrument
 
@@ -24,7 +25,23 @@ class RecordingRepository:
         return self.job_run_id
 
 
-def _adapter_transaction(*, deleted: bool = False):
+class StaticSystemTransactionSource:
+    def __init__(self, rows: tuple[CanonicalTransaction, ...]) -> None:
+        self.rows = rows
+        self.request: tuple[Region, str | None, str, date] | None = None
+
+    def get_transactions(
+        self,
+        region: Region,
+        tenant_id: str | None,
+        provider: str,
+        business_date: date,
+    ) -> tuple[CanonicalTransaction, ...]:
+        self.request = (region, tenant_id, provider, business_date)
+        return self.rows
+
+
+def _adapter_transaction(*, deleted: bool = False) -> CanonicalTransaction:
     return vn_to_canonical(
         {
             "_id": "system-deleted" if deleted else "system-001",
@@ -44,13 +61,17 @@ def test_pipeline_accepts_adapter_output_without_loading_mongo(tmp_path: Path) -
     statement = tmp_path / "onepay.csv"
     statement.write_bytes(CSV_STATEMENT)
     repository = RecordingRepository()
+    source = StaticSystemTransactionSource(
+        (_adapter_transaction(), _adapter_transaction(deleted=True))
+    )
     run_id = UUID("00000000-0000-0000-0000-000000000001")
 
     output = run_matching(
-        [_adapter_transaction(), _adapter_transaction(deleted=True)],
+        source,
         statement=statement,
         business_date=date(2026, 9, 22),
         region=Region.VN,
+        tenant_id=None,
         provider="onepay",
         repository=repository,
         run_id=run_id,
@@ -61,6 +82,7 @@ def test_pipeline_accepts_adapter_output_without_loading_mongo(tmp_path: Path) -
     assert output.system_rows == 1
     assert output.provider_rows == 1
     assert output.summary == {"MATCHED": 1}
+    assert source.request == (Region.VN, None, "ONEPAY", date(2026, 9, 22))
     assert repository.saved is not None
     assert repository.saved["provider"] == "ONEPAY"
     assert len(repository.saved["results"]) == 1
