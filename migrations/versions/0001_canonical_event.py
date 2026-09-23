@@ -5,6 +5,7 @@ down_revision = None
 branch_labels = None
 depends_on = None
 
+
 def upgrade() -> None:
     op.execute("""
         CREATE TABLE ingest_message (
@@ -36,8 +37,13 @@ def upgrade() -> None:
             PRIMARY KEY (event_day, event_id)
         ) PARTITION BY RANGE (event_day)
     """)
-    op.execute("CREATE INDEX ix_canonical_scope_time ON canonical_event (region, tenant_id, provider, updated_at DESC)")
-    op.execute("CREATE INDEX ix_canonical_updated_brin ON canonical_event USING brin (updated_at)")
+    op.execute(
+        "CREATE INDEX ix_canonical_scope_time ON canonical_event (region, tenant_id, provider, updated_at DESC)"
+    )
+    op.execute(
+        "CREATE INDEX ix_canonical_updated_brin ON canonical_event USING brin (updated_at)"
+    )
+
 
 def downgrade() -> None:
     op.execute("DROP TABLE canonical_event CASCADE")

@@ -1,1 +1,20 @@
-Generic single-database configuration.
+P2 migration order:
+
+1. `0001_canonical_event`
+2. `0002_job_run_log`
+3. `0003_recon_run`
+4. `0004_recon_result`
+5. `0005_provider_txn`
+
+Run against the local PostgreSQL service:
+
+```bash
+docker compose up -d postgres
+docker compose run --rm migrate
+```
+
+Generate SQL without changing a database:
+
+```bash
+uv run --no-project alembic upgrade head --sql
+```
