@@ -1,15 +1,25 @@
+import json
 from collections import Counter
+from dataclasses import asdict
 from decimal import Decimal
 
 import pytest
 
+from canonical.adapters.asia import asia_to_canonical
+from canonical.adapters.india import india_to_canonical
+from canonical.adapters.vn import vn_to_canonical
+from reconciliation.adapters import CsvFixtureParser
+from reconciliation.domain import MatchingEngine, ReconResultType
 from synthetic_data.generator import (
+    ASIA_MAPPING,
     DATABASE_ASIA_ID,
     DATABASE_ASIA_PH,
     DATABASE_INDIA,
     DATABASE_VN,
     GeneratorConfig,
+    VN_MAPPING,
     generate_dataset,
+    generate_provider_statements,
 )
 
 
@@ -53,6 +63,7 @@ def test_documents_keep_regional_source_shapes() -> None:
     assert "CreatedOn" in vn and "PaymentTransactionId" in vn
     assert "CreatedAt" in asia and "AmountAsDecimal" in asia
     assert "createdAt" in india and "transactionId" in india
+    assert "referenceId" not in india
     assert isinstance(india["amount"], Decimal)
 
 
@@ -61,42 +72,57 @@ def test_dataset_contains_week_two_mapping_scenarios() -> None:
         GeneratorConfig(seed=20260923, records_per_region=32)
     )
     required = {
-        "pending",
-        "success",
-        "failed",
-        "refund",
-        "unknown_status",
-        "invalid_amount",
-        "missing_currency",
-        "non_monetary",
-        "duplicate_provider_id",
+        "exact-match",
+        "amount-mismatch",
+        "currency-mismatch",
+        "missing-in-provider",
+        "duplicate",
+        "fuzzy-match",
+        "not-reconcilable",
+        "invalid-data",
     }
     for region in ("VN", "ASIA", "INDIA"):
         assert required <= set(ground_truth["canonical"][region]["scenarios"])
         assert sum(ground_truth["canonical"][region]["by_status"].values()) == 32
 
 
-def test_duplicate_provider_ids_are_intentional_not_duplicate_mongo_ids() -> None:
-    datasets, _ = generate_dataset(
-        GeneratorConfig(seed=20260923, records_per_region=64)
-    )
+def test_duplicates_exist_only_in_provider_fixtures() -> None:
+    config = GeneratorConfig(seed=20260923, records_per_region=64)
+    datasets, _ = generate_dataset(config)
 
     for database, documents in datasets.items():
         mongo_ids = [document["_id"] for document in documents]
         assert len(mongo_ids) == len(set(mongo_ids)), database
 
-    vn_provider_ids = [
-        document["PaymentTransactionId"] for document in datasets[DATABASE_VN]
-    ]
-    india_provider_ids = [
-        document["transactionId"] for document in datasets[DATABASE_INDIA]
-    ]
-    asia_provider_ids = [
-        document["ExternalTxnId"] for document in datasets[DATABASE_ASIA_ID]
-    ]
-    assert max(Counter(vn_provider_ids).values()) > 1
-    assert max(Counter(india_provider_ids).values()) > 1
-    assert max(Counter(asia_provider_ids).values()) > 1
+    statements = generate_provider_statements(datasets, config)
+    for filename, content in statements.items():
+        report = CsvFixtureParser().parse(content.encode(), filename)
+        assert report.valid
+        identities = [
+            transaction.provider_ref_id
+            if transaction.region.value == "ASIA"
+            and transaction.txn_type.value == "REFUND"
+            else transaction.provider_txn_id
+            for transaction in report.rows
+        ]
+        assert max(Counter(identities).values()) > 1
+
+
+def test_region_specific_identity_cases_are_preserved() -> None:
+    config = GeneratorConfig(seed=20260923, records_per_region=32)
+    datasets, _ = generate_dataset(config)
+
+    for database in (DATABASE_ASIA_ID, DATABASE_ASIA_PH):
+        payment = datasets[database][0]
+        refund = datasets[database][4]
+        assert refund["Type"] == 2
+        assert refund["ExternalTxnId"] == payment["ExternalTxnId"]
+        assert refund["RefundFor"] == payment["_id"]
+        assert refund["PaymentRefId"] != payment["PaymentRefId"]
+
+    for document in datasets[DATABASE_INDIA]:
+        assert document["transactionId"]
+        assert "referenceId" not in document
 
 
 @pytest.mark.parametrize(
@@ -117,3 +143,96 @@ def test_invalid_generator_configuration_is_rejected() -> None:
         GeneratorConfig(records_per_region=0)
     with pytest.raises(ValueError, match="YYYYMMDD"):
         GeneratorConfig(seed=20261340)
+
+
+def test_provider_statements_are_deterministic_and_parseable() -> None:
+    config = GeneratorConfig(seed=20260923, records_per_region=32)
+    datasets, _ = generate_dataset(config)
+
+    first = generate_provider_statements(datasets, config)
+    second = generate_provider_statements(datasets, config)
+
+    assert first == second
+    assert set(first) == {
+        "onepay_20260923.csv",
+        "espay_asia-id_20260923.csv",
+        "2c2p_asia-ph_20260923.csv",
+        "razorpay_20260923.csv",
+    }
+    for filename, content in first.items():
+        report = CsvFixtureParser().parse(content.encode(), filename)
+        assert report.valid, (filename, report.issues)
+        assert report.rows, filename
+
+
+def test_provider_statements_do_not_depend_on_canonical_adapter_output() -> None:
+    config = GeneratorConfig(seed=20260923, records_per_region=32)
+    datasets, _ = generate_dataset(config)
+    original = generate_provider_statements(datasets, config)
+
+    datasets[DATABASE_VN][0]["Amount"] = "999999999"
+    datasets[DATABASE_ASIA_ID][0]["ExternalTxnId"] = "adapter-side-change"
+    datasets[DATABASE_INDIA][0]["transactionId"] = "adapter-side-change"
+
+    assert generate_provider_statements(datasets, config) == original
+
+
+def test_generated_provider_statements_match_the_exact_oracle() -> None:
+    config = GeneratorConfig(seed=20260923, records_per_region=32)
+    datasets, ground_truth = generate_dataset(config)
+    statements = generate_provider_statements(datasets, config)
+    system_transactions = {
+        "onepay_20260923.csv": [
+            vn_to_canonical(document, VN_MAPPING)
+            for document in datasets[DATABASE_VN]
+        ],
+        "espay_asia-id_20260923.csv": [
+            asia_to_canonical(document, "asia-id", ASIA_MAPPING)
+            for document in datasets[DATABASE_ASIA_ID]
+        ],
+        "2c2p_asia-ph_20260923.csv": [
+            asia_to_canonical(document, "asia-ph", ASIA_MAPPING)
+            for document in datasets[DATABASE_ASIA_PH]
+        ],
+        "razorpay_20260923.csv": [
+            india_to_canonical(document) for document in datasets[DATABASE_INDIA]
+        ],
+    }
+
+    for filename, content in statements.items():
+        report = CsvFixtureParser().parse(content.encode(), filename)
+        system_rows = [
+            transaction
+            for transaction in system_transactions[filename]
+            if not transaction.is_deleted and not transaction.is_test_data
+        ]
+        results = MatchingEngine().match(filename, list(report.rows), system_rows)
+        oracle = ground_truth["reconciliation"][filename]
+        actual_summary = dict(
+            sorted(Counter(result.result_type.value for result in results).items())
+        )
+        assert len(system_rows) == oracle["system_rows"]
+        assert len(report.rows) == oracle["provider_rows"]
+        assert actual_summary == oracle["expected_summary"]
+        assert set(actual_summary) == {item.value for item in ReconResultType}
+
+        actual_results = []
+        for result in results:
+            values = asdict(result)
+            values.pop("run_id")
+            values["result_type"] = result.result_type.value
+            values["region"] = result.region.value
+            values["txn_type"] = (
+                result.txn_type.value if result.txn_type is not None else None
+            )
+            actual_results.append(values)
+        expected_results = []
+        for result in oracle["expected_results"]:
+            values = dict(result)
+            values.pop("case_id")
+            expected_results.append(values)
+
+        sort_key = lambda item: json.dumps(item, sort_keys=True)  # noqa: E731
+        assert sorted(actual_results, key=sort_key) == sorted(
+            expected_results, key=sort_key
+        )
