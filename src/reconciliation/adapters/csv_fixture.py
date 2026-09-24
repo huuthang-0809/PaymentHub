@@ -51,7 +51,8 @@ class CsvFixtureParser:
             )
 
         try:
-            dialect = csv.Sniffer().sniff("\n".join(text.splitlines()[:10]), delimiters=",;|\t")
+            sample = "\n".join(text.splitlines()[:10])
+            dialect = csv.Sniffer().sniff(sample, delimiters=",;|\t")
         except csv.Error:
             return self._file_error(
                 ValidationCode.INVALID_DELIMITER, "cannot detect CSV delimiter"
