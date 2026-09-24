@@ -10,7 +10,6 @@ from shared_kernel.enums import Instrument
 
 
 SYNTHETIC_MAPPING = AsiaMapping(
-    type_code={7: TxnType.PAYMENT, 8: TxnType.REFUND, 9: TxnType.CARD_LINK},
     instrument_code={"qr-method": Instrument.QR},
     synthetic_flag_value={"synthetic": True, "production": False},
 )
@@ -30,7 +29,7 @@ def valid_document(**overrides: object) -> dict[str, object]:
         "CreatedAt": datetime(2026, 9, 21, tzinfo=UTC),
         "UpdatedAt": "2026-09-21T08:00:00+07:00",
         "Status": 2,
-        "Type": 7,
+        "Type": 1,
         "Currency": "IDR",
         "AmountAsDecimal": FakeDecimal128("100"),
         "Amount": "100",
@@ -114,7 +113,7 @@ def test_missing_currency_is_visible() -> None:
 
 def test_non_monetary_type_does_not_require_amount() -> None:
     transaction = map_document(
-        valid_document(Type=9, Currency=None, AmountAsDecimal=None, Amount=None)
+        valid_document(Type=3, Currency=None, AmountAsDecimal=None, Amount=None)
     )
     assert transaction.txn_type is TxnType.CARD_LINK
     assert transaction.amount_status is AmountStatus.NOT_APPLICABLE
@@ -124,7 +123,7 @@ def test_non_monetary_type_does_not_require_amount() -> None:
 
 def test_refund_does_not_reuse_legacy_external_transaction_id() -> None:
     transaction = map_document(
-        valid_document(Type=8, RefundFor="parent-1", ExternalTxnId="parent-provider-id")
+        valid_document(Type=2, RefundFor="parent-1", ExternalTxnId="parent-provider-id")
     )
     assert transaction.txn_type is TxnType.REFUND
     assert transaction.refund_of == "parent-1"
@@ -135,7 +134,7 @@ def test_refund_does_not_reuse_legacy_external_transaction_id() -> None:
 def test_refund_without_payment_reference_can_fall_back_to_its_id() -> None:
     transaction = map_document(
         valid_document(
-            Type=8,
+            Type=2,
             RefundFor="parent-1",
             ExternalTxnId="parent-provider-id",
             PaymentRefId=None,

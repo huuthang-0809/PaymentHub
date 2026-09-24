@@ -27,6 +27,13 @@ TERMINAL = {
     CanonicalStatus.REFUNDED,
     CanonicalStatus.PARTIAL_REFUNDED,
 }
+TYPE_CODES = {
+    1: TxnType.PAYMENT,
+    2: TxnType.REFUND,
+    3: TxnType.CARD_LINK,
+    4: TxnType.TOKENIZATION,
+}
+
 
 @dataclass(frozen=True, slots=True)
 class AsiaMapping:
@@ -36,9 +43,9 @@ class AsiaMapping:
     tenant_currencies: Mapping[str, str] = field(
         default_factory=lambda: {"asia-id": "IDR", "asia-ph": "PHP"}
     )
-    type_code: Mapping[int, TxnType] = field(default_factory=dict)
     instrument_code: Mapping[str, Instrument] = field(default_factory=dict)
     synthetic_flag_value: Mapping[str, bool] = field(default_factory=dict)
+
 
 def _optional_string(value: Any) -> str | None:
     if value is None:
@@ -46,10 +53,10 @@ def _optional_string(value: Any) -> str | None:
     result = str(value).strip()
     return result or None
 
-def _type_of(document: Mapping[str, Any], config: AsiaMapping) -> TxnType:
+def _type_of(document: Mapping[str, Any]) -> TxnType:
     value = document.get("Type")
     if isinstance(value, int) and not isinstance(value, bool):
-        return config.type_code.get(value, TxnType.UNKNOWN)
+        return TYPE_CODES.get(value, TxnType.UNKNOWN)
 
     return TxnType.UNKNOWN
 
@@ -80,6 +87,7 @@ def _optional_time(value: Any) -> datetime | None:
         return ensure_utc(value)
     raise ValueError(f"Invalid timestamp {value}")
 
+
 def _is_test_data(document: Mapping[str, Any], config: AsiaMapping) -> bool:
     flag = document.get("isSyntheticTestData")
     if flag is None:
@@ -102,7 +110,7 @@ def asia_to_canonical(
     created_at = _optional_time(document.get("CreatedAt"))
     if created_at is None:
         raise ValueError("missing CreatedAt")
-    txn_type = _type_of(document, config)
+    txn_type = _type_of(document)
     source_status = document.get("Status")
     status = (
         STATUSES.get(source_status, CanonicalStatus.UNKNOWN)

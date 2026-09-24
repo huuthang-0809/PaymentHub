@@ -23,12 +23,6 @@ VN_MAPPING = VNMapping(
     card_link_methods=frozenset({"LINKCARD"}),
 )
 ASIA_MAPPING = AsiaMapping(
-    type_code={
-        1: TxnType.PAYMENT,
-        2: TxnType.REFUND,
-        3: TxnType.CARD_LINK,
-        4: TxnType.TOKENIZATION,
-    },
     instrument_code={
         "card": Instrument.CARD,
         "qr": Instrument.QR,

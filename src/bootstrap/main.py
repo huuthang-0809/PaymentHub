@@ -1,4 +1,3 @@
-import json
 import os
 from contextlib import asynccontextmanager
 from datetime import date
@@ -12,11 +11,12 @@ from psycopg_pool import ConnectionPool
 
 from canonical.adapters.asia import AsiaMapping, MongoAsiaSource
 from canonical.adapters.india import MongoIndiaSource
-from canonical.adapters.vn import MongoVnSource
+from canonical.adapters.vn import MongoVnSource, VNMapping
 from reconciliation.adapters import CsvFixtureParser, PostgreReconRepository
 from reconciliation.api import router as reconciliation_router
 from reconciliation.application import MatchingRunOutput, RunMatching
-from shared_kernel import Region, TxnType
+from shared_kernel import Region
+from shared_kernel.enums import Instrument
 
 
 def _database_url() -> str:
@@ -27,14 +27,13 @@ def _database_url() -> str:
 
 
 def _asia_mapping() -> AsiaMapping:
-    raw_mapping = json.loads(os.getenv("MONGO_ASIA_TYPE_CODES", "{}"))
-    if not isinstance(raw_mapping, dict):
-        raise ValueError("MONGO_ASIA_TYPE_CODES must be a JSON object")
     return AsiaMapping(
-        type_code={
-            int(source_code): TxnType(str(canonical_type).upper())
-            for source_code, canonical_type in raw_mapping.items()
-        }
+        instrument_code={
+            "card": Instrument.CARD,
+            "qr": Instrument.QR,
+            "virtual-account": Instrument.VIRTUAL_ACCOUNT,
+        },
+        synthetic_flag_value={"synthetic": True},
     )
 
 
@@ -57,6 +56,10 @@ async def lifespan(app: FastAPI):
             mongo_client,
             os.getenv("MONGO_VN_DATABASE", "paymenthub_vn"),
             os.getenv("MONGO_VN_COLLECTION", "payment_transactions"),
+            mapping=VNMapping(
+                instrument_by_method={"CARD": Instrument.CARD},
+                card_link_methods=frozenset({"LINKCARD"}),
+            ),
             business_timezone=ZoneInfo(
                 os.getenv("MONGO_VN_TIMEZONE", "Asia/Ho_Chi_Minh")
             ),

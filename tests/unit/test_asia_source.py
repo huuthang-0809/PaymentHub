@@ -3,7 +3,7 @@ from datetime import UTC, date, datetime
 import pytest
 
 from canonical.adapters.asia import AsiaMapping, MongoAsiaSource
-from shared_kernel import Region, TxnType
+from shared_kernel import Region
 
 
 class Collection:
@@ -20,7 +20,7 @@ def document(currency: str) -> dict[str, object]:
     return {
         "_id": "same-id",
         "CreatedAt": datetime(2026, 9, 21, tzinfo=UTC),
-        "Type": 7,
+        "Type": 1,
         "Status": 2,
         "Currency": currency,
         "AmountAsDecimal": "10",
@@ -39,7 +39,7 @@ def source_fixture() -> tuple[MongoAsiaSource, Collection, Collection]:
         client,
         {"asia-id": "db_id", "asia-ph": "db_ph"},
         "transactions",
-        AsiaMapping(type_code={7: TxnType.PAYMENT}),
+        AsiaMapping(),
     )
     return source, indonesia, philippines
 
