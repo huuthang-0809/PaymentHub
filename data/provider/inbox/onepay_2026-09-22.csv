@@ -1,4 +1,0 @@
-provider,region,tenant_id,provider_txn_id,provider_ref_id,merchant_ref,merchant_id,amount_minor,currency,status,txn_type,transaction_time
-ONEPAY,VN,,onepay-payment-001,,66f100000000000000000001,vn-merchant-001,149000,VND,SUCCESS,PAYMENT,2026-09-22T01:00:00+00:00
-ONEPAY,VN,,onepay-refund-001,,66f100000000000000000002,vn-merchant-001,50000,VND,REFUNDED,REFUND,2026-09-22T02:00:00+00:00
-ONEPAY,VN,,onepay-provider-only,,provider-only,vn-merchant-001,25000,VND,SUCCESS,PAYMENT,2026-09-22T03:00:00+00:00

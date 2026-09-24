@@ -1,4 +1,4 @@
-# Dữ liệu MongoDB tổng hợp tuần 2
+# Dữ liệu MongoDB tổng hợp
 
 Generator tạo các document nguồn có tính tất định cho adapter của từng khu vực.
 MongoDB lưu dữ liệu theo cấu trúc của nguồn, không lưu canonical transaction.
@@ -34,8 +34,9 @@ GENERATOR_SEED=20260924 RECORDS_PER_REGION=32 \
   docker compose run --rm generator
 ```
 
-Đáp án được ghi vào `generated/ground_truth.json`. Các sao kê provider được ghi
-vào `generated/provider-statements/`, mỗi reconciliation scope có một file CSV.
+Đáp án được ghi vào `tests/generated/ground_truth.json`. Các sao kê provider
+được ghi vào `tests/generated/provider-statements/`, mỗi reconciliation scope
+có một file CSV.
 Toàn bộ file sinh ra có thể được tái tạo từ seed.
 
 Với seed mặc định, các file gồm:
