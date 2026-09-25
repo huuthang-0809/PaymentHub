@@ -1,7 +1,8 @@
-from .ports import ParseReport, ValidationCode, ValidationIssue
+from .ports import ParseReport, ReconRepository, ValidationCode, ValidationIssue
 
 __all__ = [
     "ParseReport",
+    "ReconRepository",
     "ValidationCode",
     "ValidationIssue",
 ]

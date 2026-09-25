@@ -90,15 +90,6 @@ services:
         condition: service_completed_successfully
     volumes:
       - ./tests/generated:/test-data:ro
-  run-matching:
-    build: .
-    command: [ "python", "-m", "bootstrap.run_matching" ]
-    environment:
-      BUSINESS_DATE: ${BUSINESS_DATE:-2026-09-22}
-      PROVIDER_STATEMENT_FILE: /data/provider/inbox/onepay_2026-09-22.csv
-    volumes:
-      - ./data/provider:/data/provider:ro
-    profiles: [ "tools" ]
 
 volumes:
   postgres_data:
