@@ -94,6 +94,7 @@ class RunMatching:
             run_id=resolved_run_id,
             business_date=business_date,
             region=region,
+            tenant_id=tenant_id,
             provider=normalized_provider,
             statement=statement,
             statement_content=statement_content,

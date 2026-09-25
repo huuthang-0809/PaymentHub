@@ -37,6 +37,20 @@ def _asia_mapping() -> AsiaMapping:
     )
 
 
+def _business_timezone_name(region: Region, tenant_id: str | None) -> str:
+    if region is Region.VN:
+        return os.getenv("MONGO_VN_TIMEZONE", "Asia/Ho_Chi_Minh")
+    if region is Region.INDIA:
+        return os.getenv("MONGO_INDIA_TIMEZONE", "Asia/Kolkata")
+    if tenant_id == "asia-id":
+        return os.getenv("MONGO_ASIA_ID_TIMEZONE", "Asia/Jakarta")
+    if tenant_id == "asia-ph":
+        return os.getenv("MONGO_ASIA_PH_TIMEZONE", "Asia/Manila")
+    raise ValueError(
+        f"No business timezone configured for ASIA tenant {tenant_id!r}"
+    )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     mongo_client = MongoClient(
@@ -61,7 +75,7 @@ async def lifespan(app: FastAPI):
                 card_link_methods=frozenset({"LINKCARD"}),
             ),
             business_timezone=ZoneInfo(
-                os.getenv("MONGO_VN_TIMEZONE", "Asia/Ho_Chi_Minh")
+                _business_timezone_name(Region.VN, None)
             ),
         ),
         Region.ASIA: MongoAsiaSource(
@@ -78,10 +92,10 @@ async def lifespan(app: FastAPI):
             mapping=_asia_mapping(),
             business_timezones={
                 "asia-id": ZoneInfo(
-                    os.getenv("MONGO_ASIA_ID_TIMEZONE", "Asia/Jakarta")
+                    _business_timezone_name(Region.ASIA, "asia-id")
                 ),
                 "asia-ph": ZoneInfo(
-                    os.getenv("MONGO_ASIA_PH_TIMEZONE", "Asia/Manila")
+                    _business_timezone_name(Region.ASIA, "asia-ph")
                 ),
             },
         ),
@@ -90,7 +104,7 @@ async def lifespan(app: FastAPI):
             os.getenv("MONGO_INDIA_DATABASE", "paymenthub_india"),
             os.getenv("MONGO_INDIA_COLLECTION", "payment_transactions"),
             business_timezone=ZoneInfo(
-                os.getenv("MONGO_INDIA_TIMEZONE", "Asia/Kolkata")
+                _business_timezone_name(Region.INDIA, None)
             ),
         ),
     }
@@ -110,7 +124,10 @@ async def lifespan(app: FastAPI):
             use_case = RunMatching(
                 sources[region],
                 statement_parser,
-                PostgreReconRepository(connection),
+                PostgreReconRepository(
+                    connection,
+                    business_timezone=_business_timezone_name(region, tenant_id),
+                ),
             )
             return use_case.execute(
                 statement=statement,
