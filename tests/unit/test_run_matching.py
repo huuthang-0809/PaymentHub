@@ -3,9 +3,10 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from bootstrap.run_matching import run_matching
 from canonical.adapters.vn import VNMapping, vn_to_canonical
 from canonical.domain import CanonicalTransaction
+from reconciliation.adapters import CsvFixtureParser
+from reconciliation.application import RunMatching
 from shared_kernel import Region
 from shared_kernel.enums import Instrument
 
@@ -66,14 +67,17 @@ def test_pipeline_accepts_adapter_output_without_loading_mongo(tmp_path: Path) -
     )
     run_id = UUID("00000000-0000-0000-0000-000000000001")
 
-    output = run_matching(
+    output = RunMatching(
         source,
+        CsvFixtureParser(),
+        repository,
+    ).execute(
         statement=statement,
+        statement_content=statement.read_bytes(),
         business_date=date(2026, 9, 22),
         region=Region.VN,
         tenant_id=None,
         provider="onepay",
-        repository=repository,
         run_id=run_id,
     )
 
