@@ -1,0 +1,39 @@
+[project]
+name = "paymenthub"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "duyvuvsf", email = "v.duyvd11@vinsmartfuture.tech" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "alembic>=1.20.0",
+    "fastapi>=0.141.1",
+    "pymongo>=4.11,<5",
+    "psycopg[binary,pool]>=3.3.6",
+    "python-multipart>=0.0.20",
+    "pytest>=9.1.1",
+    "sqlalchemy>=2.0.54",
+    "uvicorn>=0.53.0",
+    "import-linter>=2.15",
+]
+
+[project.scripts]
+paymenthub = "paymenthub:main"
+
+[build-system]
+requires = ["uv_build>=0.12.17,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.importlinter]
+root_packages=["shared_kernel", "canonical", "reconciliation", "bootstrap"]
+include_externel_packages = true
+
+[tool.pytest.ini_options]
+pythonpath = ["src", "."]
+testpaths = ["tests"]
+
+[tool.uv]
+package = false
+system-certs = true
