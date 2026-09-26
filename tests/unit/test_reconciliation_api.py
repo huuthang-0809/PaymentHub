@@ -53,6 +53,13 @@ def test_create_reconciliation_run_forwards_uploaded_statement() -> None:
         "MATCHED": 2,
         "MISSING_IN_PROVIDER": 1,
     }
+    body = response.model_dump(mode="json")
+    breakdown = body["financial_summary"]["breakdowns"][0]
+    assert breakdown["region"] == "VN"
+    assert breakdown["result"] == "MISSING_IN_PROVIDER"
+    assert breakdown["system_count"] == 1
+    assert breakdown["provider_count"] == 0
+    assert body["financial_summary"]["refunds_by_currency"] == []
     assert received["statement_content"] == b"csv-content"
     assert str(received["statement"]) == "onepay.csv"
     body = response.model_dump(mode="json")
