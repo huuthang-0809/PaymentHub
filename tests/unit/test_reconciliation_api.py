@@ -4,10 +4,13 @@ from types import SimpleNamespace
 from uuid import UUID
 
 from fastapi import FastAPI
+from fastapi import HTTPException
+import pytest
 from starlette.datastructures import UploadFile
 from starlette.requests import Request
 
 from reconciliation.api import create_reconciliation_run
+from reconciliation.application import RunInProgress
 from shared_kernel import Region
 
 
@@ -44,3 +47,22 @@ def test_create_reconciliation_run_forwards_uploaded_statement() -> None:
     }
     assert received["statement_content"] == b"csv-content"
     assert str(received["statement"]) == "onepay.csv"
+
+
+def test_concurrent_same_input_returns_conflict() -> None:
+    app = FastAPI()
+
+    def in_progress(**values):
+        raise RunInProgress("Identical reconciliation input is running")
+
+    app.state.run_reconciliation = in_progress
+    request = Request({"type": "http", "app": app})
+    statement = UploadFile(filename="onepay.csv", file=BytesIO(b"csv-content"))
+
+    with pytest.raises(HTTPException) as error:
+        create_reconciliation_run(
+            request=request, statement=statement,
+            business_date=date(2026, 9, 22), region=Region.VN,
+            provider="ONEPAY", tenant_id=None,
+        )
+    assert error.value.status_code == 409
