@@ -225,6 +225,10 @@ def test_generated_provider_statements_match_the_exact_oracle() -> None:
             values["txn_type"] = (
                 result.txn_type.value if result.txn_type is not None else None
             )
+            values["system_status"] = (
+                result.system_status.value
+                if result.system_status is not None else None
+            )
             actual_results.append(values)
         expected_results = []
         for result in oracle["expected_results"]:
