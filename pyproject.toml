@@ -17,6 +17,8 @@ dependencies = [
     "sqlalchemy>=2.0.54",
     "uvicorn>=0.53.0",
     "import-linter>=2.15",
+    "openpyxl>=3.1.5",
+    "pyarrow>=25.0.1",
 ]
 
 [project.scripts]
@@ -55,3 +57,8 @@ source = ["src"]
 
 [tool.coverage.report]
 show_missing = true
+[dependency-groups]
+dev = [
+    "duckdb>=1.5.5",
+    "httpx>=0.28.1",
+]
