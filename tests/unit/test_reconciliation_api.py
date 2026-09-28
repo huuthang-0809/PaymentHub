@@ -9,7 +9,7 @@ import pytest
 from starlette.datastructures import UploadFile
 from starlette.requests import Request
 
-from reconciliation.api import create_reconciliation_run
+from reconciliation.adapters.http import create_reconciliation_run
 from reconciliation.application import RunInProgress
 from reconciliation.application.summary import build_financial_summary
 from reconciliation.domain import ReconResult, ReconResultType

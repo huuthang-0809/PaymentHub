@@ -12,7 +12,9 @@ from fastapi.testclient import TestClient
 from openpyxl import load_workbook
 import pyarrow.parquet as pq
 
-from reconciliation.api import router
+from reconciliation.adapters.http import router
+from reconciliation.application.query import QueryReconciliation
+from reconciliation.adapters.report import export_report
 from reconciliation.application.ports import StoredRun
 from reconciliation.domain import ReconResult, ReconResultType
 from shared_kernel import Region, TxnType, CanonicalStatus
@@ -43,13 +45,20 @@ def setup_api():
             return None
         return metadata, stored if metadata['status'] == 'COMPLETED' else None
 
-    app.state.query_reconciliation = query
+    class Reader:
+        def runs(self, **filters):
+            return query('runs', **filters)
+
+        def snapshot(self, run_id):
+            return query('snapshot', run_id=run_id)
+
+    app.state.query_reconciliation = QueryReconciliation(Reader(), export_report)
     return TestClient(app), run_id, metadata
 
 
 def test_summary_results_filter_and_cursor(setup_api):
     client, run_id, _ = setup_api
-    base = f'/recon/runs/{run_id}'
+    base = f'/reconciliation-runs/{run_id}'
     summary = client.get(base + '/summary').json()
     assert summary['system_count'] == 3
     assert summary['meta']['data_as_of']
@@ -67,10 +76,10 @@ def test_summary_results_filter_and_cursor(setup_api):
     for params in [{'cursor': '!'}, {'cursor': 'W10='}, {'limit': 0}, {'limit': 201},
                    {'sort': 'raw'}, {'result': 'invalid'}]:
         assert client.get(base + '/results', params=params).status_code == 422
-    assert client.get('/recon/runs', params={'provider': 'razorpay'}).json()['items']
-    assert client.get('/recon/runs', params={'region': 'VN'}).json()['items'] == []
-    assert client.get(f'/recon/runs/{uuid4()}/summary').status_code == 404
-    assert client.get('/recon/runs/not-uuid/summary').status_code == 422
+    assert client.get('/reconciliation-runs', params={'provider': 'razorpay'}).json()['items']
+    assert client.get('/reconciliation-runs', params={'region': 'VN'}).json()['items'] == []
+    assert client.get(f'/reconciliation-runs/{uuid4()}/summary').status_code == 404
+    assert client.get('/reconciliation-runs/not-uuid/summary').status_code == 422
 
 
 @pytest.mark.parametrize('status', ['RUNNING', 'FAILED'])
@@ -78,17 +87,17 @@ def test_unfinished_runs_only_expose_metadata(setup_api, status):
     client, run_id, metadata = setup_api
     metadata['status'] = status
     metadata['finished_at'] = None
-    base = f'/recon/runs/{run_id}'
+    base = f'/reconciliation-runs/{run_id}'
     body = client.get(base + '/summary').json()
     assert body['run']['status'] == status
     assert body['financial_summary'] is None
-    for endpoint in ['/results', '/report', '/export.parquet']:
+    for endpoint in ['/results', '/report', '/report?format=parquet']:
         assert client.get(base + endpoint).status_code == 409
 
 
 def test_exports_preserve_money_and_audit_evidence(setup_api, tmp_path):
     client, run_id, _ = setup_api
-    base = f'/recon/runs/{run_id}'
+    base = f'/reconciliation-runs/{run_id}'
     csv_response = client.get(base + '/report')
     assert csv_response.status_code == 200
     assert csv_response.headers['x-data-as-of']
@@ -100,7 +109,7 @@ def test_exports_preserve_money_and_audit_evidence(setup_api, tmp_path):
     assert values[1][values[0].index('system_txn_id')] == '=unsafe'
     assert values[1][values[0].index('system_amount_minor')] == csv_rows[0]['system_amount_minor']
     assert all(cell.data_type != 'f' for row in workbook['Results'] for cell in row)
-    parquet = client.get(base + '/export.parquet')
+    parquet = client.get(base + '/report?format=parquet')
     assert parquet.status_code == 200
     path = tmp_path / 'results.parquet'
     path.write_bytes(parquet.content)
@@ -118,14 +127,14 @@ def test_exports_preserve_money_and_audit_evidence(setup_api, tmp_path):
 
 
 def test_query_failure_returns_stable_error(setup_api):
-    import psycopg
+    from reconciliation.application.ports import QueryUnavailable
     client, run_id, _ = setup_api
 
     def unavailable(*args, **kwargs):
-        raise psycopg.OperationalError('private database diagnostic')
+        raise QueryUnavailable('private database diagnostic')
 
-    client.app.state.query_reconciliation = unavailable
-    response = client.get(f'/recon/runs/{run_id}/summary')
+    client.app.state.query_reconciliation.reader.snapshot = unavailable
+    response = client.get(f'/reconciliation-runs/{run_id}/summary')
     assert response.status_code == 503
     assert response.json() == {'detail': 'QUERY_UNAVAILABLE'}
 
