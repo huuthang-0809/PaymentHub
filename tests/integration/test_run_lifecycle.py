@@ -1,6 +1,7 @@
 """Run against a disposable, migrated PostgreSQL database via F06_TEST_DATABASE_URL."""
 
 import os
+from dataclasses import replace
 from datetime import date, datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -10,8 +11,9 @@ import pytest
 
 from reconciliation.adapters import CsvFixtureParser, PostgreReconRepository
 from reconciliation.application import RunMatching, RunInProgress
-from reconciliation.domain import ProviderTransaction
-from shared_kernel import Region, TxnType
+from reconciliation.application.summary import build_financial_summary
+from reconciliation.domain import ProviderTransaction, ReconResult, ReconResultType
+from shared_kernel import CanonicalStatus, Region, TxnType
 
 
 pytestmark = pytest.mark.skipif(
@@ -31,6 +33,34 @@ class EmptySource:
     def get_transactions(self, *args):
         self.calls += 1
         return ()
+
+
+def test_financial_summary_survives_postgres_replay() -> None:
+    provider = f"TEST{uuid4().hex[:12].upper()}"
+    with psycopg.connect(os.environ["F06_TEST_DATABASE_URL"]) as connection:
+        repo = PostgreReconRepository(connection)
+        with _claim(repo, provider, region=Region.INDIA) as claim:
+            parent = ReconResult(
+                run_id=str(claim.run_id), result_type=ReconResultType.MISSING_IN_PROVIDER,
+                region=Region.INDIA, tenant_id=None, provider=provider,
+                txn_type=TxnType.PAYMENT, system_txn_id="parent",
+                system_provider_txn_id="pay-1", system_status=CanonicalStatus.PARTIAL_REFUNDED,
+                system_amount_minor=10000, system_currency="INR", refunded_amount_minor=3000,
+            )
+            child = replace(
+                parent, txn_type=TxnType.REFUND, system_txn_id="refund",
+                system_provider_txn_id="refund-1", system_status=CanonicalStatus.SUCCESS,
+                system_amount_minor=3000, refund_of="pay-1", refunded_amount_minor=None,
+            )
+            rows = [parent, child]
+            repo.complete_run(claim=claim, system_rows=2, provider_txns=[], results=rows)
+        with _claim(repo, provider, region=Region.INDIA) as replay:
+            assert replay.existing is not None
+            actual = build_financial_summary(replay.existing.results)
+            assert actual == build_financial_summary(rows)
+            assert actual.totals_by_currency[0].delta_amount_minor == 13000
+            assert actual.refund_parent_metrics.refunded_transaction_rate == "1.000000"
+            assert actual.refund_cross_checks[0].status == "MATCHED"
 
 
 def _claim(repo, provider, *, region=Region.VN, tenant_id=None):
