@@ -2,6 +2,7 @@ from .matching import InvalidProviderStatement, MatchingRunOutput, RunMatching
 from .ports import (
     ParseReport,
     ProviderStatementParser,
+    ReconciliationTelemetry,
     ReconRepository,
     RunInProgress,
     SystemTransactionSource,
@@ -14,6 +15,7 @@ __all__ = [
     "MatchingRunOutput",
     "ParseReport",
     "ProviderStatementParser",
+    "ReconciliationTelemetry",
     "ReconRepository",
     "RunInProgress",
     "RunMatching",

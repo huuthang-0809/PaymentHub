@@ -3,7 +3,7 @@ from contextlib import AbstractContextManager
 from datetime import date
 from enum import Enum
 from pathlib import Path
-from typing import Protocol
+from typing import Mapping, Protocol
 from uuid import UUID
 
 from canonical.domain import CanonicalTransaction
@@ -19,6 +19,33 @@ class SystemTransactionSource(Protocol):
         provider: str,
         business_date: date,
     ) -> tuple[CanonicalTransaction, ...]: ...
+
+
+class ReconciliationTelemetry(Protocol):
+    def record_run( # Measure entire a reconciliation run.
+        self,
+        *,
+        region: Region,
+        tenant_id: str | None,
+        provider: str,
+        outcome: str, #completed, replayed or fail
+        duration_seconds: float, # usecase runtime
+        system_rows: int | None = None,
+        provider_rows: int | None = None,
+        summary: Mapping[str, int] | None = None, # classification counts
+    ) -> None: ...
+
+    def record_dependency( # Measure a read/write operation within a reconciliation run. Ex: measure read and standardlize process system's transactions.
+        self,
+        *,
+        region: Region,
+        tenant_id: str | None,
+        provider: str,
+        dependency: str, # ex: system source
+        operation: str, # ex: get_transactions
+        outcome: str,
+        duration_seconds: float,
+    ) -> None: ...
 
 
 class ReconRepository(Protocol):
