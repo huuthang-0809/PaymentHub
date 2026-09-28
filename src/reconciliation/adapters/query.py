@@ -1,3 +1,6 @@
+from psycopg import Error as DatabaseError
+from reconciliation.application.ports import QueryUnavailable
+
 """Postgres snapshot query adapter. Never returns raw provider payloads."""
 from psycopg.rows import dict_row
 from reconciliation.adapters.postgres import PostgreReconRepository
@@ -41,3 +44,24 @@ class PostgreReconQuery:
                     stored = PostgreReconRepository._load_completed(
                         cursor, run_id, metadata['job_run_id'])
             return metadata, stored
+
+
+class PooledReconQuery:
+    """Own connection lifetime and translate driver errors at the boundary."""
+
+    def __init__(self, pool):
+        self.pool = pool
+
+    def runs(self, **filters):
+        try:
+            with self.pool.connection() as connection:
+                return PostgreReconQuery(connection).runs(**filters)
+        except DatabaseError as error:
+            raise QueryUnavailable('QUERY_UNAVAILABLE') from error
+
+    def snapshot(self, run_id):
+        try:
+            with self.pool.connection() as connection:
+                return PostgreReconQuery(connection).snapshot(run_id)
+        except DatabaseError as error:
+            raise QueryUnavailable('QUERY_UNAVAILABLE') from error
