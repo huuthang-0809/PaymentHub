@@ -1,22 +1,96 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:15
     container_name: paymenthub_pg
     environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
+      POSTGRES_USER: paymenthub
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-paymenthub}
       POSTGRES_DB: paymenthub
     ports:
       - "5432:5432"
-    
+
     # Mount file init schema source
     volumes:
-      - ./db_init:/docker-entrypoint-initdb.d
-      
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U paymenthub -d paymenthub" ]
+      interval: 10s
+      timeout: 30s
+      retries: 10
+
   mongodb:
-    image: mongo:latest
+    image: mongo:7
     container_name: paymenthub_mongo
     ports:
       - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+      - ./docker/mongodb/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  generator:
+    build:
+      context: .
+      dockerfile: docker/test-data-generator.Dockerfile
+    environment:
+      MONGO_URI: mongodb://mongodb:27017
+      GENERATOR_SEED: ${GENERATOR_SEED:-20260923}
+      RECORDS_PER_REGION: ${RECORDS_PER_REGION:-5000}
+      GROUND_TRUTH_PATH: /test-data/ground_truth.json
+      PROVIDER_STATEMENTS_DIR: /test-data/provider-statements
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    volumes:
+      - ./tests/generated:/test-data
+
+  migrate:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    command: [ "alembic", "upgrade", "head" ]
+    environment:
+      - DATABASE_URL=postgresql+psycopg://paymenthub:${POSTGRES_PASSWORD:-paymenthub}@postgres:5432/paymenthub
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    command: ["uvicorn", "bootstrap.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      DATABASE_URL: postgresql://paymenthub:${POSTGRES_PASSWORD:-paymenthub}@postgres:5432/paymenthub
+      MONGO_URI: mongodb://mongodb:27017
+    ports:
+      - "8000:8000"
+    depends_on:
+      generator:
+        condition: service_completed_successfully
+      mongodb:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  verify-data:
+    build:
+      context: .
+      dockerfile: docker/test-data-generator.Dockerfile
+    command: ["python", "-m", "tests.data_generator.verify_ground_truth"]
+    environment:
+      MONGO_URI: mongodb://mongodb:27017
+      GROUND_TRUTH_PATH: /test-data/ground_truth.json
+    depends_on:
+      generator:
+        condition: service_completed_successfully
+    volumes:
+      - ./tests/generated:/test-data:ro
+
+volumes:
+  postgres_data:
+  mongo_data:

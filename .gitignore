@@ -12,16 +12,21 @@ build/
 develop-eggs/
 dist/
 downloads/
+docs/technical-design
 eggs/
 .eggs/
 lib/
 lib64/
 parts/
+reference/
 sdist/
 var/
 wheels/
 share/python-wheels/
 *.egg-info/
+tests/generated/*
+!tests/generated/.gitkeep
+!tests/generated/README.md
 .installed.cfg
 *.egg
 MANIFEST
@@ -216,3 +221,5 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+/reference/

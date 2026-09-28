@@ -27,8 +27,20 @@ requires = ["uv_build>=0.12.17,<0.13.0"]
 build-backend = "uv_build"
 
 [tool.importlinter]
-root_packages=["shared_kernel", "canonical", "reconciliation", "bootstrap"]
-include_externel_packages = true
+root_packages = ["shared_kernel", "canonical", "monitoring", "reconciliation", "bootstrap"]
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "Domain does not depend on infrastructure"
+type = "forbidden"
+source_modules = ["canonical.domain", "shared_kernel"]
+forbidden_modules = ["fastapi", "pymongo", "psycopg", "sqlalchemy"]
+
+[[tool.importlinter.contracts]]
+name = "Monitoring application does not depend on adapters"
+type = "forbidden"
+source_modules = ["monitoring.application"]
+forbidden_modules = ["monitoring.adapters"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src", "."]
@@ -37,3 +49,9 @@ testpaths = ["tests"]
 [tool.uv]
 package = false
 system-certs = true
+
+[tool.coverage.run]
+source = ["src"]
+
+[tool.coverage.report]
+show_missing = true
