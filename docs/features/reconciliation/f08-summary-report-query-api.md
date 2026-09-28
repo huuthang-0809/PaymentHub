@@ -156,8 +156,7 @@ implement trong `ResultSummary`. Tên field và chính sách đếm là đề xu
   ánh thiếu evidence thay vì sai lệch tiền thực tế; `MATCHED` cũng chưa chứng minh
   lịch sử refund đầy đủ.
 - Giữ nguyên implementation để review; đây là giả định tạm thời, chưa phải rule
-  production đã được xác nhận. Phạm vi lịch sử và cách biểu diễn evidence không
-  đầy đủ tiếp tục để mở tại mục 7, theo dependency ở mục 10 tài liệu gốc.
+  production đã được xác nhận.
 
 ### Database
 

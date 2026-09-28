@@ -11,11 +11,18 @@ from starlette.requests import Request
 
 from reconciliation.api import create_reconciliation_run
 from reconciliation.application import RunInProgress
+from reconciliation.application.summary import build_financial_summary
+from reconciliation.domain import ReconResult, ReconResultType
 from shared_kernel import Region
 
 
 def test_create_reconciliation_run_forwards_uploaded_statement() -> None:
     received: dict[str, object] = {}
+    financial = build_financial_summary([ReconResult(
+        run_id="run", result_type=ReconResultType.MISSING_IN_PROVIDER,
+        region=Region.VN, tenant_id=None, provider="ONEPAY",
+        system_txn_id="missing", system_amount_minor=50, system_currency="VND",
+    )])
 
     def run_reconciliation(**values):
         received.update(values)
@@ -25,6 +32,7 @@ def test_create_reconciliation_run_forwards_uploaded_statement() -> None:
             system_rows=3,
             provider_rows=2,
             summary={"MATCHED": 2, "MISSING_IN_PROVIDER": 1},
+            financial_summary=financial,
         )
 
     app = FastAPI()
@@ -47,6 +55,9 @@ def test_create_reconciliation_run_forwards_uploaded_statement() -> None:
     }
     assert received["statement_content"] == b"csv-content"
     assert str(received["statement"]) == "onepay.csv"
+    body = response.model_dump(mode="json")
+    assert body["financial_summary"]["totals_by_currency"][0]["delta_amount_minor"] == 50
+    assert body["financial_summary"]["refund_parent_metrics"]["refunded_transaction_rate"] is None
 
 
 def test_concurrent_same_input_returns_conflict() -> None:
