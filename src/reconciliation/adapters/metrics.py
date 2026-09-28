@@ -10,12 +10,12 @@ from shared_kernel import Region
 class ReconciliationMetrics:
     """Prometheus instrumentation with bounded, operational labels."""
 
-    def __init__(self, registry: CollectorRegistry = REGISTRY) -> None:
+    def __init__(self, registry: CollectorRegistry = REGISTRY) -> None: # registry: registry metrics, REGISTRY: defaut Registry
         labels = ("region", "tenant_id", "provider")
         self.requests = Counter(
             "paymenthub_reconciliation_requests_total",
             "Reconciliation requests by terminal outcome.",
-            (*labels, "outcome"),
+            (*labels, "outcome"), # outcome: runs result (completed, replayed, invalid_statement, in_progress, failed)
             registry=registry,
         )
         self.duration = Histogram(
@@ -28,22 +28,22 @@ class ReconciliationMetrics:
         self.input_rows = Counter(
             "paymenthub_reconciliation_input_rows_total",
             "Rows processed by completed, non-replayed reconciliations.",
-            (*labels, "side"),
+            (*labels, "side"), # side: system or provider
             registry=registry,
         )
         self.results = Counter(
             "paymenthub_reconciliation_results_total",
             "Results produced by completed, non-replayed reconciliations.",
-            (*labels, "result"),
+            (*labels, "result"), # result (MATCHED, ...)
             registry=registry,
         )
-        self.last_success = Gauge(
+        self.last_success = Gauge( # Timestamp of last success run.
             "paymenthub_reconciliation_last_success_timestamp_seconds",
             "Unix timestamp of the last completed, non-replayed reconciliation.",
             labels,
             registry=registry,
         )
-        self.dependency_duration = Histogram(
+        self.dependency_duration = Histogram( # duration of get system source, save complete run and fail run.
             "paymenthub_reconciliation_dependency_duration_seconds",
             "Reconciliation dependency operation duration.",
             (*labels, "dependency", "operation", "outcome"),
@@ -73,7 +73,7 @@ class ReconciliationMetrics:
         duration_seconds: float,
     ) -> None:
         labels = self._scope(region, tenant_id, provider)
-        self.dependency_duration.labels(
+        self.dependency_duration.labels( #choose series for scope/operation/outcome
             **labels,
             dependency=dependency,
             operation=operation,

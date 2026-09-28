@@ -73,7 +73,7 @@ sequenceDiagram
 
 | Method | Endpoint | Description |
 |---|---|---|
-| POST | `/recon/runs` | Client có truyền policy override hay server tự resolve `[Need Confirm]`. |
+| POST | `/reconciliation-runs` | Client có truyền policy override hay server tự resolve `[Need Confirm]`. |
 
 ### Request/Response
 

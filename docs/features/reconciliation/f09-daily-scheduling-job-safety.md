@@ -88,7 +88,7 @@ sequenceDiagram
 
 | Method | Endpoint | Description |
 |---|---|---|
-| POST | `/recon/runs` | Manual trigger; dùng cùng command với scheduler. |
+| POST | `/reconciliation-runs` | Manual trigger; dùng cùng command với scheduler. |
 | GET | `/health/live` | Process liveness `[Need Confirm]`. |
 | GET | `/health/ready` | Dependency readiness `[Need Confirm]`. |
 

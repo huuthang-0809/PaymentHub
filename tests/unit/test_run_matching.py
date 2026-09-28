@@ -56,6 +56,18 @@ class StaticSystemTransactionSource:
         return self.rows
 
 
+class RecordingTelemetry:
+    def __init__(self) -> None:
+        self.runs: list[dict[str, Any]] = []
+        self.dependencies: list[dict[str, Any]] = []
+
+    def record_run(self, **values: Any) -> None:
+        self.runs.append(values)
+
+    def record_dependency(self, **values: Any) -> None:
+        self.dependencies.append(values)
+
+
 def _adapter_transaction(*, deleted: bool = False) -> CanonicalTransaction:
     return vn_to_canonical(
         {
@@ -79,12 +91,14 @@ def test_pipeline_accepts_adapter_output_without_loading_mongo(tmp_path: Path) -
     source = StaticSystemTransactionSource(
         (_adapter_transaction(), _adapter_transaction(deleted=True))
     )
+    telemetry = RecordingTelemetry()
     run_id = UUID("00000000-0000-0000-0000-000000000001")
 
     output = RunMatching(
         source,
         CsvFixtureParser(),
         repository,
+        telemetry,
     ).execute(
         statement=statement,
         statement_content=statement.read_bytes(),
@@ -110,6 +124,14 @@ def test_pipeline_accepts_adapter_output_without_loading_mongo(tmp_path: Path) -
     assert repository.claimed["provider"] == "ONEPAY"
     assert repository.claimed["tenant_id"] is None
     assert len(repository.saved["results"]) == 1
+    assert telemetry.runs[0]["outcome"] == "completed"
+    assert {
+        (item["dependency"], item["operation"], item["outcome"])
+        for item in telemetry.dependencies
+    } == {
+        ("system_source", "get_transactions", "success"),
+        ("repository", "complete_run", "success"),
+    }
     repository.existing = StoredRun(
         output.system_rows, output.provider_rows, output.summary, output.results,
     )
@@ -118,6 +140,7 @@ def test_pipeline_accepts_adapter_output_without_loading_mongo(tmp_path: Path) -
         business_date=date(2026, 9, 22), region=Region.VN,
         tenant_id=None, provider="onepay", run_id=run_id,
     )
+    assert replay.replayed is True
     assert replay.financial_summary == output.financial_summary
 
 
@@ -134,6 +157,7 @@ def test_completed_replay_skips_parser_source_and_matching(tmp_path: Path) -> No
     )
 
     assert output.run_id == run_id
+    assert output.replayed is True
     assert output.summary == {"MATCHED": 2}
     assert output.system_rows == 4
     assert source.request is None

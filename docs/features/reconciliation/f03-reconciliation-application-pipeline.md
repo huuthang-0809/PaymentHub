@@ -78,7 +78,7 @@ sequenceDiagram
 
 | Method | Endpoint | Description |
 |---|---|---|
-| POST | `/recon/runs` | Entry point hiện tại của pipeline. |
+| POST | `/reconciliation-runs` | Entry point hiện tại của pipeline. |
 | GET | `/health` | Health response tĩnh; chưa probe dependencies. |
 
 ### Request/Response

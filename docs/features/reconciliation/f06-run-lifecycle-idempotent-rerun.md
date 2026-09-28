@@ -103,7 +103,7 @@ sequenceDiagram
 
 | Method | Endpoint | Description |
 |---|---|---|
-| POST | `/recon/runs` | Tạo run mới hoặc trả run đã tồn tại cho cùng input. |
+| POST | `/reconciliation-runs` | Tạo run mới hoặc trả run đã tồn tại cho cùng input. |
 
 ### Request/Response
 

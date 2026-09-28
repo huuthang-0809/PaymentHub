@@ -30,7 +30,7 @@ requires = ["uv_build>=0.12.17,<0.13.0"]
 build-backend = "uv_build"
 
 [tool.importlinter]
-root_packages = ["shared_kernel", "canonical", "monitoring", "reconciliation", "bootstrap"]
+root_packages = ["shared_kernel", "canonical", "reconciliation", "bootstrap"]
 include_external_packages = true
 
 [[tool.importlinter.contracts]]
@@ -40,16 +40,10 @@ source_modules = ["canonical.domain", "shared_kernel"]
 forbidden_modules = ["fastapi", "pymongo", "psycopg", "sqlalchemy"]
 
 [[tool.importlinter.contracts]]
-name = "Monitoring application does not depend on adapters"
-type = "forbidden"
-source_modules = ["monitoring.application"]
-forbidden_modules = ["monitoring.adapters"]
-
-[[tool.importlinter.contracts]]
 name = "Reconciliation application stays independent of infrastructure"
 type = "forbidden"
 source_modules = ["reconciliation.application"]
-forbidden_modules = ["reconciliation.adapters", "bootstrap"]
+forbidden_modules = ["reconciliation.adapters", "bootstrap", "fastapi", "psycopg", "pymongo", "sqlalchemy"]
 
 [[tool.importlinter.contracts]]
 name = "Reconciliation domain stays independent of outer layers"
@@ -58,8 +52,7 @@ source_modules = ["reconciliation.domain"]
 forbidden_modules = [
     "reconciliation.application",
     "reconciliation.adapters",
-    "reconciliation.api",
-    "bootstrap",
+    "bootstrap", "fastapi", "psycopg", "pymongo", "sqlalchemy",
 ]
 
 [tool.pytest.ini_options]
