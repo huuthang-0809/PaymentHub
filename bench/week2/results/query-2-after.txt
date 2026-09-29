@@ -1,0 +1,15 @@
+Limit  (cost=404.26..404.39 rows=51 width=300) (actual time=0.202..0.207 rows=51 loops=1)
+  Buffers: shared hit=103
+  ->  Sort  (cost=404.26..404.52 rows=101 width=300) (actual time=0.202..0.204 rows=51 loops=1)
+        Sort Key: ((result_key)::integer)
+        Sort Method: quicksort  Memory: 50kB
+        Buffers: shared hit=103
+        ->  Bitmap Heap Scan on recon_result  (cost=5.47..400.90 rows=101 width=300) (actual time=0.030..0.164 rows=100 loops=1)
+              Recheck Cond: ((run_id = '68ca2f05-25ba-b9de-5dcd-ba9ac7e36f46'::uuid) AND (result_type = 'FUZZY_MATCHED'::text))
+              Heap Blocks: exact=100
+              Buffers: shared hit=103
+              ->  Bitmap Index Scan on ix_recon_result_run_type  (cost=0.00..5.44 rows=101 width=0) (actual time=0.017..0.017 rows=100 loops=1)
+                    Index Cond: ((run_id = '68ca2f05-25ba-b9de-5dcd-ba9ac7e36f46'::uuid) AND (result_type = 'FUZZY_MATCHED'::text))
+                    Buffers: shared hit=3
+Planning Time: 0.119 ms
+Execution Time: 0.243 ms

@@ -1,0 +1,13 @@
+Sort  (cost=669.49..669.92 rows=174 width=159) (actual time=0.179..0.185 rows=167 loops=1)
+  Sort Key: run_id
+  Sort Method: quicksort  Memory: 56kB
+  Buffers: shared hit=170
+  ->  Bitmap Heap Scan on recon_run  (cost=7.08..663.01 rows=174 width=159) (actual time=0.032..0.126 rows=167 loops=1)
+        Recheck Cond: ((business_date = '2026-01-23'::date) AND (region = 'ASIA'::text) AND (tenant_id = 'bench-tenant-17'::text) AND (provider = 'ESPAY'::text))
+        Heap Blocks: exact=167
+        Buffers: shared hit=170
+        ->  Bitmap Index Scan on ix_recon_run_scope_date  (cost=0.00..7.03 rows=174 width=0) (actual time=0.014..0.014 rows=167 loops=1)
+              Index Cond: ((business_date = '2026-01-23'::date) AND (region = 'ASIA'::text) AND (tenant_id = 'bench-tenant-17'::text) AND (provider = 'ESPAY'::text))
+              Buffers: shared hit=3
+Planning Time: 0.077 ms
+Execution Time: 0.204 ms

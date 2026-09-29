@@ -1,0 +1,17 @@
+Limit  (cost=27650.44..27650.57 rows=51 width=300) (actual time=1.516..1.521 rows=51 loops=1)
+  Buffers: shared hit=344
+  ->  Sort  (cost=27650.44..27650.70 rows=101 width=300) (actual time=1.515..1.518 rows=51 loops=1)
+        Sort Key: ((result_key)::integer)
+        Sort Method: quicksort  Memory: 50kB
+        Buffers: shared hit=344
+        ->  Bitmap Heap Scan on recon_result  (cost=409.69..27647.08 rows=101 width=300) (actual time=0.330..1.473 rows=100 loops=1)
+              Recheck Cond: (run_id = '68ca2f05-25ba-b9de-5dcd-ba9ac7e36f46'::uuid)
+              Filter: (result_type = 'FUZZY_MATCHED'::text)
+              Rows Removed by Filter: 9900
+              Heap Blocks: exact=256
+              Buffers: shared hit=344
+              ->  Bitmap Index Scan on uq_recon_result_key  (cost=0.00..409.66 rows=9764 width=0) (actual time=0.307..0.308 rows=10000 loops=1)
+                    Index Cond: (run_id = '68ca2f05-25ba-b9de-5dcd-ba9ac7e36f46'::uuid)
+                    Buffers: shared hit=88
+Planning Time: 0.083 ms
+Execution Time: 1.539 ms
