@@ -7,6 +7,7 @@ from uuid import UUID
 import pytest
 
 from reconciliation.adapters import PostgreReconRepository
+from reconciliation.application.ports import RunClaim
 from reconciliation.domain import (
     ProviderTransaction,
     ReconResult,
@@ -71,14 +72,16 @@ def _result() -> ReconResult:
     )
 
 
-def test_save_run_persists_checksum_timezone_scope_and_lineage() -> None:
+def test_claim_persists_checksum_timezone_scope_and_complete_lineage() -> None:
     connection, transaction, cursor = _connection()
+    cursor.rowcount = 1
     repository = PostgreReconRepository(
         connection,
         business_timezone="Asia/Jakarta",
     )
 
-    job_run_id = repository.save_run(
+    cursor.fetchone.side_effect = [(True,), None]
+    with repository.claim_run(
         run_id=RUN_ID,
         business_date=date(2026, 9, 22),
         region=Region.ASIA,
@@ -86,12 +89,15 @@ def test_save_run_persists_checksum_timezone_scope_and_lineage() -> None:
         provider="ESPAY",
         statement=Path("espay.csv"),
         statement_content=STATEMENT_CONTENT,
-        provider_txns=[_provider_transaction()],
-        results=[_result()],
-    )
+    ) as claim:
+        repository.complete_run(
+            claim=claim, system_rows=1,
+            provider_txns=[_provider_transaction()], results=[_result()],
+        )
 
-    job_values = cursor.execute.call_args_list[0].args[1]
-    run_values = cursor.execute.call_args_list[1].args[1]
+    job_run_id = claim.job_run_id
+    job_values = cursor.execute.call_args_list[2].args[1]
+    run_values = cursor.execute.call_args_list[3].args[1]
     provider_values = cursor.executemany.call_args_list[0].args[1][0]
     result_values = cursor.executemany.call_args_list[1].args[1][0]
 
@@ -124,24 +130,19 @@ def test_save_run_persists_checksum_timezone_scope_and_lineage() -> None:
         149_000,
         "IDR",
     )
-    transaction.__enter__.assert_called_once_with()
-    transaction.__exit__.assert_called_once_with(None, None, None)
+    assert transaction.__enter__.call_count == 3
+    assert transaction.__exit__.call_count == 3
 
 
-def test_save_run_propagates_detail_failure_to_transaction_context() -> None:
+def test_complete_run_rolls_back_detail_failure() -> None:
     connection, transaction, cursor = _connection()
     cursor.executemany.side_effect = [None, RuntimeError("result insert failed")]
     repository = PostgreReconRepository(connection)
 
     with pytest.raises(RuntimeError, match="result insert failed"):
-        repository.save_run(
-            run_id=RUN_ID,
-            business_date=date(2026, 9, 22),
-            region=Region.ASIA,
-            tenant_id="asia-id",
-            provider="ESPAY",
-            statement=Path("espay.csv"),
-            statement_content=STATEMENT_CONTENT,
+        repository.complete_run(
+            claim=RunClaim(RUN_ID, UUID("00000000-0000-0000-0000-000000000002")),
+            system_rows=1,
             provider_txns=[_provider_transaction()],
             results=[_result()],
         )
@@ -156,4 +157,3 @@ def test_repository_rejects_unknown_business_timezone() -> None:
 
     with pytest.raises(ValueError, match="Unknown business timezone"):
         PostgreReconRepository(connection, business_timezone="Not/AZone")
-

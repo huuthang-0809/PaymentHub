@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from contextlib import AbstractContextManager
 from datetime import date
 from enum import Enum
 from pathlib import Path
@@ -21,19 +22,47 @@ class SystemTransactionSource(Protocol):
 
 
 class ReconRepository(Protocol):
-    def save_run(
+    def claim_run(
         self,
         *,
-        run_id: UUID,
         business_date: date,
         region: Region,
         tenant_id: str | None,
         provider: str,
         statement: Path,
         statement_content: bytes,
+        run_id: UUID | None = None,
+    ) -> AbstractContextManager["RunClaim"]: ...
+
+    def complete_run(
+        self,
+        *,
+        claim: "RunClaim",
+        system_rows: int,
         provider_txns: list[ProviderTransaction],
         results: list[ReconResult],
-    ) -> UUID: ...
+    ) -> None: ...
+
+    def fail_run(self, claim: "RunClaim", error: Exception) -> None: ...
+
+
+@dataclass(frozen=True, slots=True)
+class StoredRun: #Saved run in db
+    system_rows: int
+    provider_rows: int
+    summary: dict[str, int]
+    results: tuple[ReconResult, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class RunClaim: # Run info that request is processing
+    run_id: UUID
+    job_run_id: UUID
+    existing: StoredRun | None = None
+
+
+class RunInProgress(Exception): #409 Conflict
+    """An identical input is currently owned by another request."""
 
 
 class ValidationCode(str, Enum):
