@@ -19,6 +19,7 @@ dependencies = [
     "import-linter>=2.15",
     "openpyxl>=3.1.5",
     "pyarrow>=25.0.1",
+    "prometheus-client>=0.23,<1",
 ]
 
 [project.scripts]
@@ -43,6 +44,23 @@ name = "Monitoring application does not depend on adapters"
 type = "forbidden"
 source_modules = ["monitoring.application"]
 forbidden_modules = ["monitoring.adapters"]
+
+[[tool.importlinter.contracts]]
+name = "Reconciliation application stays independent of infrastructure"
+type = "forbidden"
+source_modules = ["reconciliation.application"]
+forbidden_modules = ["reconciliation.adapters", "bootstrap"]
+
+[[tool.importlinter.contracts]]
+name = "Reconciliation domain stays independent of outer layers"
+type = "forbidden"
+source_modules = ["reconciliation.domain"]
+forbidden_modules = [
+    "reconciliation.application",
+    "reconciliation.adapters",
+    "reconciliation.api",
+    "bootstrap",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["src", "."]

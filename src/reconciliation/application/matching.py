@@ -2,12 +2,20 @@ from collections import Counter
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
+from time import perf_counter
+from typing import Any, Callable
 from uuid import UUID
 
 from reconciliation.domain import MatchingEngine, ReconResult
 from shared_kernel import Region
 
-from .ports import ProviderStatementParser, ReconRepository, SystemTransactionSource
+from .ports import (
+    ProviderStatementParser,
+    ReconciliationTelemetry,
+    ReconRepository,
+    RunInProgress,
+    SystemTransactionSource,
+)
 from .summary import FinancialSummary, build_financial_summary
 
 
@@ -19,6 +27,7 @@ class MatchingRunOutput:
     provider_rows: int
     summary: dict[str, int]
     results: tuple[ReconResult, ...]
+    replayed: bool = False #new run or replay, True: get old results
 
     @property
     def financial_summary(self) -> FinancialSummary:
@@ -35,10 +44,12 @@ class RunMatching:
         system_source: SystemTransactionSource,
         parser: ProviderStatementParser,
         repository: ReconRepository,
+        telemetry: ReconciliationTelemetry | None = None,
     ) -> None:
         self.system_source = system_source
         self.parser = parser
         self.repository = repository
+        self.telemetry = telemetry
 
     def execute(
         self,
@@ -51,14 +62,59 @@ class RunMatching:
         provider: str,
         run_id: UUID | None = None,
     ) -> MatchingRunOutput:
+        started = perf_counter()
+        outcome = "failed" #default status
+        output: MatchingRunOutput | None = None
         normalized_provider = provider.strip().upper()
-        if not normalized_provider:
+        try:
+            output = self._execute(
+                statement=statement,
+                statement_content=statement_content,
+                business_date=business_date,
+                region=region,
+                tenant_id=tenant_id,
+                provider=normalized_provider,
+                run_id=run_id,
+            )
+            outcome = "replayed" if output.replayed else "completed"
+            return output
+        except InvalidProviderStatement:
+            outcome = "invalid_statement"
+            raise
+        except RunInProgress:
+            outcome = "in_progress"
+            raise
+        finally:
+            if self.telemetry is not None:
+                self.telemetry.record_run(
+                    region=region,
+                    tenant_id=tenant_id,
+                    provider=normalized_provider,
+                    outcome=outcome,
+                    duration_seconds=perf_counter() - started,
+                    system_rows=output.system_rows if output else None,
+                    provider_rows=output.provider_rows if output else None,
+                    summary=output.summary if output else None,
+                )
+
+    def _execute(
+        self,
+        *,
+        statement: Path,
+        statement_content: bytes,
+        business_date: date,
+        region: Region,
+        tenant_id: str | None,
+        provider: str,
+        run_id: UUID | None,
+    ) -> MatchingRunOutput:
+        if not provider:
             raise ValueError("provider is required")
         with self.repository.claim_run(
             business_date=business_date,
             region=region,
             tenant_id=tenant_id,
-            provider=normalized_provider,
+            provider=provider,
             statement=statement,
             statement_content=statement_content,
             run_id=run_id,
@@ -67,7 +123,7 @@ class RunMatching:
                 return MatchingRunOutput(
                     claim.run_id, claim.job_run_id,
                     claim.existing.system_rows, claim.existing.provider_rows,
-                    claim.existing.summary, claim.existing.results,
+                    claim.existing.summary, claim.existing.results, True,
                 )
             try:
                 report = self.parser.parse(statement_content, statement.name)
@@ -85,7 +141,7 @@ class RunMatching:
                         for transaction in provider_rows
                         if transaction.region is not region
                         or transaction.tenant_id != tenant_id
-                        or transaction.provider != normalized_provider
+                        or transaction.provider != provider
                     ),
                     None,
                 )
@@ -95,8 +151,15 @@ class RunMatching:
                         "the requested region, tenant, or provider"
                     )
 
-                system_transactions = self.system_source.get_transactions(
-                    region, tenant_id, normalized_provider, business_date,
+                system_transactions = self._dependency(
+                    lambda: self.system_source.get_transactions(
+                        region, tenant_id, provider, business_date
+                    ),
+                    dependency="system_source",
+                    operation="get_transactions",
+                    region=region,
+                    tenant_id=tenant_id,
+                    provider=provider,
                 )
                 system_rows = [
                     transaction for transaction in system_transactions
@@ -105,7 +168,13 @@ class RunMatching:
                 results = MatchingEngine().match(
                     str(claim.run_id), provider_rows, system_rows
                 )
-                self.repository.complete_run(
+                self._dependency(
+                    self.repository.complete_run,
+                    dependency="repository",
+                    operation="complete_run",
+                    region=region,
+                    tenant_id=tenant_id,
+                    provider=provider,
                     claim=claim, system_rows=len(system_rows),
                     provider_txns=provider_rows, results=results,
                 )
@@ -115,5 +184,43 @@ class RunMatching:
                     len(provider_rows), dict(sorted(summary.items())), tuple(results),
                 )
             except Exception as error:
-                self.repository.fail_run(claim, error)
+                self._dependency(
+                    self.repository.fail_run,
+                    dependency="repository",
+                    operation="fail_run",
+                    region=region,
+                    tenant_id=tenant_id,
+                    provider=provider,
+                    claim=claim,
+                    error=error,
+                )
                 raise
+
+    def _dependency(
+        self,
+        callback: Callable[..., Any],
+        *,
+        dependency: str,
+        operation: str,
+        region: Region,
+        tenant_id: str | None,
+        provider: str,
+        **parameters: object,
+    ) -> Any:
+        started = perf_counter()
+        outcome = "failed"
+        try:
+            result = callback(**parameters)
+            outcome = "success"
+            return result
+        finally:
+            if self.telemetry is not None:
+                self.telemetry.record_dependency(
+                    region=region,
+                    tenant_id=tenant_id,
+                    provider=provider,
+                    dependency=dependency,
+                    operation=operation,
+                    outcome=outcome,
+                    duration_seconds=perf_counter() - started,
+                )
