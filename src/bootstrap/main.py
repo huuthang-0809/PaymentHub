@@ -139,6 +139,14 @@ async def lifespan(app: FastAPI):
                 run_id=run_id,
             )
 
+    from reconciliation.adapters.query import PostgreReconQuery
+
+    def query_reconciliation(operation, **parameters):
+        with postgres_pool.connection() as connection:
+            query = PostgreReconQuery(connection)
+            return getattr(query, operation)(**parameters)
+
+    app.state.query_reconciliation = query_reconciliation
     app.state.run_reconciliation = run_reconciliation
     try:
         yield
