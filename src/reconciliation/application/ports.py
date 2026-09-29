@@ -3,7 +3,10 @@ from contextlib import AbstractContextManager
 from datetime import date
 from enum import Enum
 from pathlib import Path
-from typing import Mapping, Protocol
+from typing import TYPE_CHECKING, Mapping, Protocol
+
+if TYPE_CHECKING:
+    from .matching import MatchingRunOutput
 from uuid import UUID
 
 from canonical.domain import CanonicalTransaction
@@ -124,3 +127,37 @@ class ParseReport:
 
 class ProviderStatementParser(Protocol):
     def parse(self, content: bytes, source_file: str) -> ParseReport: ...
+
+
+class QueryUnavailable(Exception):
+    """The committed read store is unavailable."""
+
+
+class RunNotFound(Exception):
+    pass
+
+
+class RunNotCompleted(Exception):
+    pass
+
+
+class ExportFailed(Exception):
+    pass
+
+
+class ReconQuery(Protocol):
+    def runs(self, *, region: str | None = None, tenant_id: str | None = None,
+             provider: str | None = None, business_date: date | None = None,
+             status: str | None = None) -> list[dict]: ...
+
+    def snapshot(self, run_id: UUID) -> tuple[dict, StoredRun | None] | None: ...
+
+
+class ReportExporter(Protocol):
+    def __call__(self, results, format: str, data_as_of) -> tuple[bytes, str]: ...
+
+
+class MatchingRunner(Protocol):
+    def __call__(self, *, statement: Path, statement_content: bytes,
+                 business_date: date, region: Region, tenant_id: str | None,
+                 provider: str, run_id: UUID | None = None) -> "MatchingRunOutput": ...
