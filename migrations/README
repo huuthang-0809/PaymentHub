@@ -5,7 +5,9 @@ P2 migration order:
 3. `0003_recon_run`
 4. `0004_recon_result`
 5. `0005_provider_txn`
-6. `0006_recon_result_refund_evidence`
+6. `0006_window_aggregate`
+7. `0007_recon_result_refund_evidence`
+8. `0008_normalize_column_types`
 
 Run against the local PostgreSQL service:
 

@@ -1,7 +1,11 @@
 import os
+from pathlib import Path
 
 from alembic import context
+from dotenv import load_dotenv
 from sqlalchemy import engine_from_config, pool
+
+load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=False)
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
