@@ -27,6 +27,7 @@ share/python-wheels/
 tests/generated/*
 !tests/generated/.gitkeep
 !tests/generated/README.md
+generated/provider-statements/
 .installed.cfg
 *.egg
 MANIFEST
@@ -211,7 +212,6 @@ tempCodeRunnerFile.py
 # Ruff stuff:
 .ruff_cache/
 
-data/provider/
 # PyPI configuration file
 .pypirc
 
