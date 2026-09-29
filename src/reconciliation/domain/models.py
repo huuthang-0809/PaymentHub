@@ -3,7 +3,14 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from shared_kernel import Money, ReconScopeKey, Region, TxnType, ensure_utc
+from shared_kernel import (
+    CanonicalStatus,
+    Money,
+    ReconScopeKey,
+    Region,
+    TxnType,
+    ensure_utc,
+)
 
 @dataclass(frozen=True, slots=True)
 class ProviderTransaction:
@@ -75,8 +82,12 @@ class ReconResult:
     
     # System info
     system_txn_id: str | None = None
+    system_provider_txn_id: str | None = None
+    system_status: CanonicalStatus | None = None
     system_amount_minor: int | None = None
     system_currency: str | None = None
+    refund_of: str | None = None
+    refunded_amount_minor: int | None = None
     
     # Provider info
     provider_txn_id: str | None = None

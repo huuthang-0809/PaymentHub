@@ -8,6 +8,7 @@ from reconciliation.domain import MatchingEngine, ReconResult
 from shared_kernel import Region
 
 from .ports import ProviderStatementParser, ReconRepository, SystemTransactionSource
+from .summary import FinancialSummary, build_financial_summary
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,6 +19,10 @@ class MatchingRunOutput:
     provider_rows: int
     summary: dict[str, int]
     results: tuple[ReconResult, ...]
+
+    @property
+    def financial_summary(self) -> FinancialSummary:
+        return build_financial_summary(self.results)
 
 
 class InvalidProviderStatement(ValueError):

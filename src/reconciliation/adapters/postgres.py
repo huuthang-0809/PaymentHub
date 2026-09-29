@@ -13,7 +13,7 @@ from psycopg.types.json import Jsonb
 
 from reconciliation.application.ports import RunClaim, RunInProgress, StoredRun
 from reconciliation.domain import ProviderTransaction, ReconResult, ReconResultType
-from shared_kernel import Region, TxnType
+from shared_kernel import CanonicalStatus, Region, TxnType
 
 
 class PostgreReconRepository:
@@ -150,7 +150,9 @@ class PostgreReconRepository:
         cursor.execute(
             """
             SELECT result_type, region, tenant_id, provider, txn_type,
-                   system_txn_id, system_amount_minor, system_currency,
+                   system_txn_id, system_provider_txn_id, system_status,
+                   system_amount_minor, system_currency,
+                   refund_of, refunded_amount_minor,
                    provider_txn_id, provider_amount_minor, provider_currency,
                    delta_amount, source_file, source_row_number, reason
             FROM recon_result WHERE run_id = %s ORDER BY result_key::integer
@@ -162,11 +164,13 @@ class PostgreReconRepository:
                 run_id=str(run_id), result_type=ReconResultType(row[0]),
                 region=Region(row[1]), tenant_id=row[2], provider=row[3],
                 txn_type=TxnType(row[4]) if row[4] is not None else None,
-                system_txn_id=row[5], system_amount_minor=row[6],
-                system_currency=row[7], provider_txn_id=row[8],
-                provider_amount_minor=row[9], provider_currency=row[10],
-                delta_amount=row[11], source_file=row[12],
-                source_row_number=row[13], reason=row[14],
+                system_txn_id=row[5], system_provider_txn_id=row[6],
+                system_status=(CanonicalStatus(row[7]) if row[7] else None),
+                system_amount_minor=row[8], system_currency=row[9],
+                refund_of=row[10], refunded_amount_minor=row[11],
+                provider_txn_id=row[12], provider_amount_minor=row[13],
+                provider_currency=row[14], delta_amount=row[15],
+                source_file=row[16], source_row_number=row[17], reason=row[18],
             )
             for row in cursor.fetchall()
         )
@@ -232,12 +236,15 @@ class PostgreReconRepository:
                 INSERT INTO recon_result (
                     run_id, job_run_id, result_key, result_type, region,
                     tenant_id, provider, txn_type, system_txn_id,
-                    system_amount_minor, system_currency, provider_txn_id,
+                    system_provider_txn_id, system_status,
+                    system_amount_minor, system_currency,
+                    refund_of, refunded_amount_minor, provider_txn_id,
                     provider_amount_minor, provider_currency, delta_amount,
                     source_file, source_row_number, reason
                 ) VALUES (
                     %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s
                 )
                 """,
                 [
@@ -251,8 +258,12 @@ class PostgreReconRepository:
                         result.provider,
                         result.txn_type.value if result.txn_type else None,
                         result.system_txn_id,
+                        result.system_provider_txn_id,
+                        result.system_status.value if result.system_status else None,
                         result.system_amount_minor,
                         result.system_currency,
+                        result.refund_of,
+                        result.refunded_amount_minor,
                         result.provider_txn_id,
                         result.provider_amount_minor,
                         result.provider_currency,

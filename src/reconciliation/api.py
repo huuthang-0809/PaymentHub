@@ -7,6 +7,7 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile, s
 from pydantic import BaseModel
 
 from reconciliation.application import InvalidProviderStatement, RunInProgress
+from reconciliation.application.summary import FinancialSummary
 from shared_kernel import Region
 
 
@@ -19,6 +20,7 @@ class ReconciliationRunResponse(BaseModel):
     system_rows: int
     provider_rows: int
     summary: dict[str, int]
+    financial_summary: FinancialSummary
 
 
 @router.post(
@@ -66,4 +68,5 @@ def create_reconciliation_run(
         system_rows=output.system_rows,
         provider_rows=output.provider_rows,
         summary=output.summary,
+        financial_summary=output.financial_summary,
     )

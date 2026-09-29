@@ -60,6 +60,7 @@ def _result() -> ReconResult:
         provider="ESPAY",
         txn_type=TxnType.PAYMENT,
         system_txn_id="system-001",
+        system_provider_txn_id="provider-001",
         system_amount_minor=149_000,
         system_currency="IDR",
         provider_txn_id="provider-001",
@@ -122,10 +123,14 @@ def test_claim_persists_checksum_timezone_scope_and_complete_lineage() -> None:
         "provider_status": "00",
     }
     assert result_values[:2] == (RUN_ID, job_run_id)
-    assert result_values[8:14] == (
+    assert result_values[8:18] == (
         "system-001",
+        "provider-001",
+        None,
         149_000,
         "IDR",
+        None,
+        None,
         "provider-001",
         149_000,
         "IDR",

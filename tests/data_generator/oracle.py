@@ -52,6 +52,34 @@ def _normalized_provider_txn_id(
     return str(value) if value else None
 
 
+def _system_provider_txn_id(case: BaseCase) -> str | None:
+    if case.scope.region is Region.ASIA and case.txn_type is TxnType.REFUND:
+        return None
+    return case.provider_txn_id
+
+
+def _system_status(case: BaseCase) -> str:
+    if case.scope.region is Region.ASIA and case.txn_type is TxnType.REFUND:
+        return "REFUNDED"
+    if case.scope.region is Region.INDIA and case.txn_type is TxnType.TOKENIZATION:
+        return "UNKNOWN"
+    return "SUCCESS"
+
+
+def _refund_of(case: BaseCase) -> str | None:
+    if case.scope.region is Region.ASIA and case.txn_type is TxnType.REFUND:
+        parent_index = (case.index // len(MUTATION_CYCLE)) * len(MUTATION_CYCLE)
+        prefix = case.system_txn_id.rsplit("-", 1)[0]
+        return f"{prefix}-{parent_index:06d}"
+    return None
+
+
+def _refunded_amount(case: BaseCase) -> int | None:
+    if case.scope.region is Region.INDIA and case.mutation != "invalid-data":
+        return 0
+    return None
+
+
 def _expected_system_only(
     case: BaseCase, result_type: str, reason: str
 ) -> dict[str, Any]:
@@ -63,8 +91,12 @@ def _expected_system_only(
         "provider": case.scope.provider,
         "txn_type": case.txn_type.value,
         "system_txn_id": case.system_txn_id,
+        "system_provider_txn_id": _system_provider_txn_id(case),
+        "system_status": _system_status(case),
         "system_amount_minor": _system_amount(case),
         "system_currency": case.scope.currency,
+        "refund_of": _refund_of(case),
+        "refunded_amount_minor": _refunded_amount(case),
         "provider_txn_id": None,
         "provider_amount_minor": None,
         "provider_currency": None,
@@ -91,8 +123,12 @@ def _expected_provider_only(
         "provider": scope.provider,
         "txn_type": provider_values["txn_type"],
         "system_txn_id": None,
+        "system_provider_txn_id": None,
+        "system_status": None,
         "system_amount_minor": None,
         "system_currency": None,
+        "refund_of": None,
+        "refunded_amount_minor": None,
         "provider_txn_id": provider_values["provider_txn_id"] or None,
         "provider_amount_minor": provider_values["amount_minor"],
         "provider_currency": provider_values["currency"],
@@ -127,8 +163,12 @@ def _expected_pair(
         "provider": case.scope.provider,
         "txn_type": case.txn_type.value,
         "system_txn_id": case.system_txn_id,
+        "system_provider_txn_id": _system_provider_txn_id(case),
+        "system_status": _system_status(case),
         "system_amount_minor": system_amount,
         "system_currency": case.scope.currency,
+        "refund_of": _refund_of(case),
+        "refunded_amount_minor": _refunded_amount(case),
         "provider_txn_id": _normalized_provider_txn_id(case, provider_values),
         "provider_amount_minor": provider_amount,
         "provider_currency": provider_values["currency"],
