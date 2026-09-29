@@ -1,6 +1,6 @@
 -- First database page for the filtered /results endpoint.
 -- Concrete values keep this file directly runnable by EXPLAIN and psql.
-SELECT result_key::integer AS result_key, run_id::text AS run_id,
+SELECT result_key, run_id::text AS run_id,
        result_type, region, tenant_id, provider, txn_type,
        system_txn_id, system_provider_txn_id, system_status,
        system_amount_minor, system_currency, refund_of, refunded_amount_minor,
@@ -9,5 +9,5 @@ SELECT result_key::integer AS result_key, run_id::text AS run_id,
 FROM recon_result
 WHERE run_id = md5('run-123')::uuid
   AND result_type = 'FUZZY_MATCHED'
-ORDER BY result_key::integer
+ORDER BY result_key
 LIMIT 51;

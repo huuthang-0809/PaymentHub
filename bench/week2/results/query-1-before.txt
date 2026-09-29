@@ -1,15 +1,15 @@
-Sort  (cost=24670.69..24671.12 rows=174 width=159) (actual time=7.656..7.663 rows=167 loops=1)
+Sort  (cost=27759.61..27760.01 rows=162 width=191) (actual time=9.617..9.632 rows=167 loops=1)
   Sort Key: run_id
-  Sort Method: quicksort  Memory: 56kB
-  Buffers: shared hit=12712
-  ->  Bitmap Heap Scan on recon_run  (cost=890.24..24664.21 rows=174 width=159) (actual time=2.127..7.613 rows=167 loops=1)
-        Recheck Cond: ((business_date = '2026-01-23'::date) AND (provider = 'ESPAY'::text))
-        Filter: ((region = 'ASIA'::text) AND (tenant_id = 'bench-tenant-17'::text))
+  Sort Method: quicksort  Memory: 61kB
+  Buffers: shared hit=15032
+  ->  Bitmap Heap Scan on recon_run  (cost=1296.29..27753.66 rows=162 width=191) (actual time=2.724..9.568 rows=167 loops=1)
+        Recheck Cond: ((business_date = '2026-01-23'::date) AND ((provider)::text = 'ESPAY'::text))
+        Filter: (((region)::text = 'ASIA'::text) AND (tenant_id = 'bench-tenant-17'::text))
         Rows Removed by Filter: 16533
-        Heap Blocks: exact=12525
-        Buffers: shared hit=12712
-        ->  Bitmap Index Scan on uq_recon_run_input  (cost=0.00..890.19 rows=16577 width=0) (actual time=1.042..1.043 rows=16700 loops=1)
-              Index Cond: ((business_date = '2026-01-23'::date) AND (provider = 'ESPAY'::text))
-              Buffers: shared hit=187
-Planning Time: 0.053 ms
-Execution Time: 7.675 ms
+        Heap Blocks: exact=14755
+        Buffers: shared hit=15032
+        ->  Bitmap Index Scan on uq_recon_run_input  (cost=0.00..1296.25 rows=16770 width=0) (actual time=1.321..1.321 rows=16700 loops=1)
+              Index Cond: ((business_date = '2026-01-23'::date) AND ((provider)::text = 'ESPAY'::text))
+              Buffers: shared hit=277
+Planning Time: 0.082 ms
+Execution Time: 9.652 ms

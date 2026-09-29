@@ -15,23 +15,31 @@ def result_dict(row):
             for key, value in asdict(row).items()}
 
 
+def decode_cursor(cursor, scope):
+    if not cursor:
+        return None
+    try:
+        payload = json.loads(base64.b64decode(cursor, altchars=b'-_', validate=True))
+        if payload['scope'] != scope or not isinstance(payload['after'], str):
+            raise ValueError
+        return payload['after']
+    except (ValueError, KeyError, TypeError, UnicodeDecodeError) as error:
+        raise ValueError('Invalid cursor for this query') from error
+
+
+def encode_cursor(scope, after):
+    return base64.urlsafe_b64encode(json.dumps({
+        'scope': scope, 'after': after,
+    }).encode()).decode()
+
+
 def paginate(items, limit, cursor, scope, key):
-    after = None
-    if cursor:
-        try:
-            payload = json.loads(base64.b64decode(cursor, altchars=b'-_', validate=True))
-            if payload['scope'] != scope or not isinstance(payload['after'], str):
-                raise ValueError
-            after = payload['after']
-        except (ValueError, KeyError, TypeError, UnicodeDecodeError) as error:
-            raise ValueError('Invalid cursor for this query') from error
+    after = decode_cursor(cursor, scope)
     remaining = [item for item in items if after is None or key(item) > after]
     page = remaining[:limit]
     next_cursor = None
     if len(remaining) > limit:
-        next_cursor = base64.urlsafe_b64encode(json.dumps({
-            'scope': scope, 'after': key(page[-1]),
-        }).encode()).decode()
+        next_cursor = encode_cursor(scope, key(page[-1]))
     return page, next_cursor
 
 
@@ -76,13 +84,34 @@ class QueryReconciliation:
         return dict(items=page, next_cursor=next_cursor, meta={'data_as_of': datetime.now(UTC)})
 
     def results(self, run_id, *, result=None, limit=50, cursor=None, sort='result_key'):
-        metadata, stored = self.snapshot(run_id, True)
-        rows = [{'result_key': index, **result_dict(row)}
-                for index, row in enumerate(stored.results, 1)
-                if result is None or row.result_type == result]
-        page, next_cursor = paginate(
-            rows, limit, cursor, [str(run_id), result.value if result else None, sort],
-            lambda row: f"{row['result_key']:020d}",
+        scope = [str(run_id), result.value if result else None, sort]
+        # Keep run-not-found/not-completed precedence over malformed cursor errors.
+        cursor_error = None
+        try:
+            after = decode_cursor(cursor, scope)
+            if after is not None and (
+                len(after) != 20 or not after.isascii() or not after.isdigit()
+                or not 1 <= int(after) <= 2_147_483_647
+            ):
+                raise ValueError('Invalid cursor for this query')
+        except ValueError as error:
+            cursor_error = error
+            after = None
+        snapshot = self.reader.results_page(
+            run_id, result=result.value if result else None, after=after,
+            fetch_limit=0 if cursor_error else limit + 1,
+        )
+        if snapshot is None:
+            raise RunNotFound("Run not found")
+        metadata, rows = snapshot
+        if metadata['status'] != 'COMPLETED':
+            raise RunNotCompleted("Run is not completed")
+        if cursor_error:
+            raise cursor_error
+        page = rows[:limit]
+        next_cursor = (
+            encode_cursor(scope, f"{page[-1]['result_key']:020d}")
+            if len(rows) > limit else None
         )
         return dict(items=page, next_cursor=next_cursor, meta={'data_as_of': metadata['finished_at']})
 

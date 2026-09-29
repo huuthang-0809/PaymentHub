@@ -13,7 +13,7 @@ from openpyxl import load_workbook
 import pyarrow.parquet as pq
 
 from reconciliation.adapters.http import router
-from reconciliation.application.query import QueryReconciliation
+from reconciliation.application.query import QueryReconciliation, encode_cursor, result_dict
 from reconciliation.adapters.report import export_report
 from reconciliation.application.ports import StoredRun
 from reconciliation.domain import ReconResult, ReconResultType
@@ -52,6 +52,20 @@ def setup_api():
         def snapshot(self, run_id):
             return query('snapshot', run_id=run_id)
 
+        def results_page(self, run_id, *, result=None, after=None, fetch_limit=51):
+            snapshot = self.snapshot(run_id)
+            if snapshot is None:
+                return None
+            meta, evidence = snapshot
+            if evidence is None:
+                return meta, []
+            candidates = [{'result_key': i, **result_dict(row)}
+                          for i, row in enumerate(evidence.results, 1)
+                          if (result is None or row.result_type.value == result)
+                          and (after is None or f"{i:020d}" > after)]
+            return meta, candidates[:fetch_limit]
+
+
     app.state.query_reconciliation = QueryReconciliation(Reader(), export_report)
     return TestClient(app), run_id, metadata
 
@@ -76,6 +90,12 @@ def test_summary_results_filter_and_cursor(setup_api):
     for params in [{'cursor': '!'}, {'cursor': 'W10='}, {'limit': 0}, {'limit': 201},
                    {'sort': 'raw'}, {'result': 'invalid'}]:
         assert client.get(base + '/results', params=params).status_code == 422
+    non_numeric_cursor = encode_cursor(
+        [str(run_id), None, 'result_key'], 'x' * 20,
+    )
+    assert client.get(
+        base + '/results', params={'cursor': non_numeric_cursor},
+    ).status_code == 422
     assert client.get('/reconciliation-runs', params={'provider': 'razorpay'}).json()['items']
     assert client.get('/reconciliation-runs', params={'region': 'VN'}).json()['items'] == []
     assert client.get(f'/reconciliation-runs/{uuid4()}/summary').status_code == 404
