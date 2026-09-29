@@ -127,7 +127,7 @@ def test_pipeline_replay_and_failed_detail_transaction() -> None:
         assert output.summary == {"MISSING_IN_SYSTEM": 1}
         assert source.calls == 1
         replay = runner.execute(**values)
-        assert replay == output
+        assert replay == replace(output, replayed=True)
         assert source.calls == 1
         assert connection.execute(
             "SELECT count(*) FROM recon_result WHERE run_id = %s",
