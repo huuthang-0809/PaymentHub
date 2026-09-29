@@ -7,7 +7,7 @@
 | Feature | Reconciliation summary, report, export và query API |
 | Owner | `[TBD]` |
 | Ticket | `[TBD]` |
-| Status | `Designed` |
+| Status | `Partially implemented`: financial summary qua POST; query/export còn thiết kế. |
 | Purpose | Cho phép đọc trạng thái/audit results, tổng hợp tiền đúng theo currency và tải report reconciliation. |
 
 ## 2. Requirements
@@ -21,7 +21,7 @@
   amount vẫn cần được thống kê.
 - Tỷ lệ transaction đã refund lấy từ status/counter trên transaction gốc,
   tách biệt với refund volume/amount lấy từ refund document. Phạm vi parent và
-  mẫu số của tỷ lệ cần xác nhận trước khi triển khai.
+  mẫu số của tỷ lệ đang dùng quy ước tạm thời bên dưới, cần xác nhận cho production.
 - Không coerce invalid/missing amount thành 0 và không cộng chéo currency.
 - `delta_amount_minor` của summary là system total trừ provider total trong
   cùng currency, gồm cả giao dịch missing và hai phía của currency mismatch.
@@ -29,10 +29,14 @@
   phía không có record đóng góp tổng rỗng bằng 0 khi tính delta; amount hiển thị
   của phía đó vẫn là `null`. Nếu có record mang currency đó nhưng amount thiếu,
   delta summary trả `null`; totals chỉ cộng amount có giá trị. Record không có
-  currency không thể phân bổ vào currency total và vẫn được thống kê theo result.
+  currency không thể phân bổ vào currency total: tăng `unallocated_currency_count`
+  và trả `null` cho mọi delta currency trong run vì chưa biết currency nào bị ảnh hưởng.
 - Result `DUPLICATE` vẫn được đếm trong classification và giữ lại cho audit,
   nhưng không tham gia monetary totals, refund volume/amount hoặc refund
   cross-check. Summary chỉ tính tiền từ bản chính sau dedupe.
+- `NOT_RECONCILABLE` cũng bị loại khỏi financial summary. Totals là tổng amount
+  hợp lệ của records còn lại ở mỗi phía (mọi status), không phải net settlement.
+  `INVALID_DATA` phía system không đóng góp amount, kể cả khi có số tiền.
 - Refund volume và refund amount lấy từ refund document thành công; không cộng
   `refunded_amount_minor` trên payment gốc vào monetary total.
 - VN liên kết refund child với payment gốc bằng `refund_of = system txn_id` và
@@ -108,6 +112,7 @@ sequenceDiagram
 
 | Method | Endpoint | Description |
 |---|---|---|
+| POST | `/recon/runs` | Đã có: trả counts cũ và `financial_summary`, gồm totals, tỷ lệ parent refund và cross-check. |
 | GET | `/recon/runs` | Danh sách run theo contract/filter `[TBD]`. |
 | GET | `/recon/runs/{run_id}/summary` | Run status, scope, counts và totals. |
 | GET | `/recon/runs/{run_id}/results` | Filtered/paginated detailed results. |
@@ -116,6 +121,9 @@ sequenceDiagram
 | GET | `/recon/runs/{run_id}/validation-issues` | Optional validation report endpoint `[Need Confirm]`. |
 
 ### Request/Response
+
+Hiện chỉ POST được implement. GET, exports, `refunds_by_currency` và
+`meta.data_as_of` dưới đây là contract mục tiêu cho phần còn lại của F08.
 
 - Result filter tối thiểu hỗ trợ `result`, ví dụ `AMOUNT_MISMATCH`; các filter khác `[TBD]`.
 - Cursor pagination có stable ordering; sort chỉ nhận field trong whitelist.
@@ -127,32 +135,62 @@ sequenceDiagram
   `PARENT_TOTAL_UNAVAILABLE`, `CURRENCY_MISMATCH`.
 - Response có `meta.data_as_of`.
 
-### Các trường summary cần bổ sung — đề xuất để review
+### Financial summary đã implement
 
-Các trường dưới đây bổ sung contract theo mục 5.7 tài liệu gốc; chưa được
-implement trong `ResultSummary`. Tên field và chính sách đếm là đề xuất để review.
+`POST /recon/runs` giữ `summary` là counts theo classification và bổ sung
+`financial_summary` với ba nhóm số liệu. `build_financial_summary` tính từ
+`ReconResult`; rerun dùng cùng hàm trên persisted results, không đọc lại nguồn.
+
+| Field | Cách tính |
+|---|---|
+| `totals_by_currency[]` | Theo từng currency: tổng amount hợp lệ hai phía, delta tổng, `system_amount_count`/`provider_amount_count` và `system_missing_amount_count`/`provider_missing_amount_count`. Total là tổng phần biết được; dùng missing counts để nhận biết total chưa đầy đủ. Không có amount hợp lệ thì total là `null`. |
+| `unallocated_currency_count` | Số record phía system/provider không có currency để phân bổ; không gán currency mặc định. |
+| `refund_parent_metrics` | Count parent đủ điều kiện, count parent đã refund, count thiếu evidence và tỷ lệ theo quy ước bên dưới. |
+| `refund_cross_checks[]` | Region, tenant, provider, parent reference, currency, count/amount child thành công, counter parent và trạng thái so sánh. Chỉ VN/India. |
+
+Quy ước tạm thời cho tỷ lệ parent đã refund:
+
+- Mẫu số là mọi system `PAYMENT`/`LOAD` trong snapshot sau loại `DUPLICATE` và
+  `NOT_RECONCILABLE`, gồm cả failed/pending; không gồm refund child.
+- Tử số là parent có status `REFUNDED`/`PARTIAL_REFUNDED` **hoặc** counter
+  `refunded_amount_minor > 0`. Mỗi parent chỉ đếm một lần dù có nhiều child.
+  Nếu status/counter mâu thuẫn, rule OR vẫn áp dụng; chưa có metric riêng cho mâu thuẫn.
+- Rate = tử số / mẫu số, trong khoảng 0–1, trả chuỗi thập phân 6 chữ số,
+  ví dụ `"0.500000"` nghĩa là 50%; tính bằng Decimal, không dùng float.
+- Mẫu số 0 hoặc có parent thiếu status/`UNKNOWN` mà không có evidence refund
+  dương thì rate `null`; trường hợp sau tăng `missing_evidence_count`.
+  Runs cũ không có refund evidence không được tự coi là chưa refund.
+
+### Các trường summary còn cần bổ sung — đề xuất để review
+
+Các trường dưới đây bổ sung contract theo mục 5.7 tài liệu gốc. Counts hiện có
+ở `system_rows`/`provider_rows` trước dedupe; breakdowns chưa implement.
 
 | Field | Ý nghĩa / quy tắc |
 |---|---|
 | `system_count` | Số record phía system trong phạm vi run; không phụ thuộc amount có hợp lệ hay không. Cần thống nhất cách thể hiện raw count và unique count khi có duplicate. |
 | `provider_count` | Số record phía provider trong phạm vi run; phân biệt với số result rows và số cặp matched. Cần thống nhất raw count/unique count như phía system. |
 | `breakdowns[]` | Mỗi nhóm mang `region`, `tenant_id`, `provider`, `txn_type`, `result`; có counts hai phía và `totals_by_currency`. Dù run chỉ có một scope vẫn cần breakdown theo transaction type/result. |
-| `refund_parent_metrics.eligible_parent_count` | Mẫu số: số transaction gốc thuộc phạm vi tính tỷ lệ refund; tập txn_type/status đủ điều kiện `[Need Confirm]`. Không tính refund child vào mẫu số. |
-| `refund_parent_metrics.refunded_parent_count` | Tử số: số parent đã refund theo status/counter, mỗi parent chỉ đếm một lần. Quy tắc xử lý status/counter mâu thuẫn `[Need Confirm]`. |
-| `refund_parent_metrics.refunded_transaction_rate` | `refunded_parent_count / eligible_parent_count`; trả `null` khi mẫu số bằng 0. Biểu diễn tỷ lệ và độ chính xác `[Need Confirm]`; không suy tỷ lệ từ số refund child. |
 
 ### Giả định hiện tại — India refund cross-check
 
 - Implementation hiện chỉ đọc parent và refund children trong persisted snapshot
   của cùng run; không truy vấn lịch sử refund qua nhiều business date.
-- Child total là tổng amount có giá trị của child có status `SUCCESS`, `REFUNDED`
-  hoặc `PARTIAL_REFUNDED`. Khi không có child thỏa điều kiện, total là `None`.
+- Child total là tổng amount của child có status `SUCCESS`, `REFUNDED` hoặc
+  `PARTIAL_REFUNDED`, loại duplicate. Child thành công thiếu/invalid amount hoặc
+  child thiếu status/`UNKNOWN` trả `INCOMPLETE_CHILD_DATA` và total `null`.
+  Nếu có children với status đã biết nhưng không child nào thành công, tổng là 0.
+- Parent đã refund nhưng không có children trong snapshot trả
+  `CHILDREN_NOT_IN_SNAPSHOT`; thiếu currency trả `MISSING_CURRENCY`; nhiều parent
+  cùng reference trả `AMBIGUOUS_PARENT`. Liên kết được giới hạn theo region,
+  tenant và provider, sau đó kiểm tra currency. VN trả `LINKED` theo internal ID;
+  India liên kết bằng provider transaction ID của parent.
 - Khi tìm thấy parent cùng currency và có `refunded_amount_minor`, code so sánh
   counter này trực tiếp với child total: bằng nhau trả `MATCHED`, khác nhau trả
   `AMOUNT_MISMATCH`. Parent counter chỉ là evidence, không cộng vào monetary total.
 - Cách so sánh hiện tại giả định snapshot chứa đủ child liên quan và counter parent
   phản ánh cùng thời điểm. Code chưa xác minh được giả định đó. Nếu counter tích
-  lũy gồm refund ngoài run hoặc thiếu child amount, `AMOUNT_MISMATCH` có thể phản
+  lũy gồm refund ngoài run, `AMOUNT_MISMATCH` có thể phản
   ánh thiếu evidence thay vì sai lệch tiền thực tế; `MATCHED` cũng chưa chứng minh
   lịch sử refund đầy đủ.
 - Giữ nguyên implementation để review; đây là giả định tạm thời, chưa phải rule
@@ -162,10 +200,14 @@ implement trong `ResultSummary`. Tên field và chính sách đếm là đề xu
 
 | Table / Collection | Change |
 |---|---|
-| Run summary/totals | New normalized table hoặc JSONB snapshot `[Need Confirm]`. |
+| Run summary/totals | Financial summary tái tạo từ persisted `recon_result`; classification counts vẫn ở `job_run_log.metrics`. |
 | `recon_result` | Dùng cho filtered pagination; lưu thêm system provider ID/status, `refund_of` và `refunded_amount_minor` để tái tạo refund summary/cross-check. |
 | Validation issues | New table `[TBD]`. |
 | Export artifact metadata | Chỉ thêm nếu report được lưu thay vì sinh theo request `[Need Confirm]`. |
+
+Migration `0006` thêm bốn field refund evidence mà repository đọc/ghi. Chạy
+`alembic upgrade head` trước API phiên bản này. Runs cũ giữ evidence `null`;
+migration không backfill từ dữ liệu hiện tại vì sẽ thay đổi snapshot lịch sử.
 
 ## 5. Error & Edge Cases
 

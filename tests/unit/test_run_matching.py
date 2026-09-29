@@ -100,12 +100,25 @@ def test_pipeline_accepts_adapter_output_without_loading_mongo(tmp_path: Path) -
     assert output.system_rows == 1
     assert output.provider_rows == 1
     assert output.summary == {"MATCHED": 1}
+    totals = output.financial_summary.totals_by_currency[0]
+    assert totals.system_amount_minor == totals.provider_amount_minor == 149000
+    assert totals.delta_amount_minor == 0
+    assert output.financial_summary.refund_parent_metrics.refunded_transaction_rate == "0.000000"
     assert source.request == (Region.VN, None, "ONEPAY", date(2026, 9, 22))
     assert repository.saved is not None
     assert repository.claimed is not None
     assert repository.claimed["provider"] == "ONEPAY"
     assert repository.claimed["tenant_id"] is None
     assert len(repository.saved["results"]) == 1
+    repository.existing = StoredRun(
+        output.system_rows, output.provider_rows, output.summary, output.results,
+    )
+    replay = RunMatching(source, CsvFixtureParser(), repository).execute(
+        statement=statement, statement_content=b"skip parser on replay",
+        business_date=date(2026, 9, 22), region=Region.VN,
+        tenant_id=None, provider="onepay", run_id=run_id,
+    )
+    assert replay.financial_summary == output.financial_summary
 
 
 def test_completed_replay_skips_parser_source_and_matching(tmp_path: Path) -> None:
