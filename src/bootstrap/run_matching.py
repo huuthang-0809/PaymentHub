@@ -1,101 +1,84 @@
-import json
-import os
 from collections import Counter
+from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from zoneinfo import ZoneInfo
+from uuid import UUID, uuid4
 
-from pymongo import MongoClient
-
-from canonical.adapters.vn import MongoVnSource, VNMapping
+from canonical.domain import CanonicalTransaction
 from reconciliation.adapters import CsvFixtureParser
+from reconciliation.application import ReconRepository
 from reconciliation.domain import MatchingEngine, ReconResult
-from shared_kernel.enums import Instrument, Region
+from shared_kernel import Region
 
 
-def _result_row(result: ReconResult) -> dict[str, object]:
-    return {
-        "result_type": result.result_type.value,
-        "region": result.region.value,
-        "tenant_id": result.tenant_id,
-        "provider": result.provider,
-        "system_txn_id": result.system_txn_id,
-        "provider_txn_id": result.provider_txn_id,
-        "system_amount_minor": result.system_amount_minor,
-        "provider_amount_minor": result.provider_amount_minor,
-        "delta_amount": result.delta_amount,
-        "source_file": result.source_file,
-        "source_row_number": result.source_row_number,
-        "reason": result.reason,
-    }
+@dataclass(frozen=True, slots=True)
+class MatchingRunOutput:
+    run_id: UUID
+    job_run_id: UUID
+    system_rows: int
+    provider_rows: int
+    summary: dict[str, int]
+    results: tuple[ReconResult, ...]
 
 
-def main() -> None:
-    statement = Path(
-        os.getenv(
-            "PROVIDER_STATEMENT_FILE",
-            "data/provider/inbox/onepay_2026-09-22.csv",
-        )
-    )
-    business_date = date.fromisoformat(os.getenv("MONGO_BUSINESS_DATE", "2026-09-22"))
-    report = CsvFixtureParser().parse(statement.read_bytes(), statement.name)
+class InvalidProviderStatement(ValueError):
+    """Raised when a provider statement cannot enter the matching pipeline."""
+
+
+def run_matching(
+    system_transactions: Iterable[CanonicalTransaction],
+    *,
+    statement: Path,
+    business_date: date,
+    region: Region,
+    provider: str,
+    repository: ReconRepository,
+    run_id: UUID | None = None,
+) -> MatchingRunOutput:
+    """Match adapter-normalized transactions against one provider statement.
+
+    Loading regional source data belongs to the canonical adapters. This pipeline
+    accepts their ``CanonicalTransaction`` output and has no database knowledge
+    about the source systems.
+    """
+    statement_content = statement.read_bytes()
+    report = CsvFixtureParser().parse(statement_content, statement.name)
     if not report.valid:
-        print(
-            json.dumps(
-                {
-                    "statement": str(statement),
-                    "issues": [
-                        {
-                            "row": issue.row,
-                            "field": issue.field,
-                            "code": issue.code.value,
-                            "message": issue.message,
-                        }
-                        for issue in report.issues
-                    ],
-                },
-                indent=2,
-            )
+        details = "; ".join(
+            f"row={issue.row}, field={issue.field}: {issue.message}"
+            for issue in report.issues
         )
-        raise SystemExit(1)
+        raise InvalidProviderStatement(details)
 
-    with MongoClient(
-        os.getenv("MONGO_URI", "mongodb://localhost:27017"),
-        tz_aware=True,
-        serverSelectionTimeoutMS=5_000,
-    ) as client:
-        source = MongoVnSource(
-            client,
-            "paymenthub_vn",
-            "PaymentTransactions",
-            VNMapping(instrument_by_method={"CARD": Instrument.CARD}),
-            ZoneInfo("Asia/Ho_Chi_Minh"),
-        )
-        system_rows = [
-            row
-            for row in source.get_transactions(Region.VN, None, "ONEPAY", business_date)
-            if not row.is_deleted and not row.is_test_data
-        ]
-
+    normalized_provider = provider.strip().upper()
+    system_rows = [
+        transaction
+        for transaction in system_transactions
+        if not transaction.is_deleted and not transaction.is_test_data
+    ]
+    provider_rows = list(report.rows)
+    resolved_run_id = run_id or uuid4()
     results = MatchingEngine().match(
-        os.getenv("RECON_RUN_ID", "local-demo-run"),
-        list(report.rows),
-        system_rows,
+        str(resolved_run_id), provider_rows, system_rows
+    )
+    job_run_id = repository.save_run(
+        run_id=resolved_run_id,
+        business_date=business_date,
+        region=region,
+        provider=normalized_provider,
+        statement=statement,
+        statement_content=statement_content,
+        provider_txns=provider_rows,
+        results=results,
     )
     summary = Counter(result.result_type.value for result in results)
-    print(
-        json.dumps(
-            {
-                "statement": str(statement),
-                "system_rows": len(system_rows),
-                "provider_rows": len(report.rows),
-                "summary": dict(sorted(summary.items())),
-                "results": [_result_row(result) for result in results],
-            },
-            indent=2,
-        )
+
+    return MatchingRunOutput(
+        run_id=resolved_run_id,
+        job_run_id=job_run_id,
+        system_rows=len(system_rows),
+        provider_rows=len(provider_rows),
+        summary=dict(sorted(summary.items())),
+        results=tuple(results),
     )
-
-
-if __name__ == "__main__":
-    main()
