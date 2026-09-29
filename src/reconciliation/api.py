@@ -6,7 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile, status
 from pydantic import BaseModel
 
-from reconciliation.application import InvalidProviderStatement
+from reconciliation.application import InvalidProviderStatement, RunInProgress
 from shared_kernel import Region
 
 
@@ -53,6 +53,8 @@ def create_reconciliation_run(
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)
         ) from exc
+    except RunInProgress as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)

@@ -10,7 +10,7 @@
 | Status | `Implemented` |
 | Purpose | Lưu run/provider/results nhất quán, giữ checksum và lineage từ result về job/run và input source. |
 
-Trạng thái `Implemented` áp dụng cho persistence, checksum và lineage của F04. Idempotent rerun/durable failure record thuộc F06; cutoff và allowed lateness theo business policy thuộc F07.
+Trạng thái `Implemented` áp dụng cho persistence, checksum và lineage của F04. F06 đã bổ sung idempotent rerun/durable failure record và chuyển việc claim/checksum lên trước matching; cutoff và allowed lateness theo business policy vẫn thuộc F07.
 
 ## 2. Requirements
 
@@ -43,17 +43,19 @@ sequenceDiagram
     participant Repo as PostgreReconRepository
     participant PG as PostgreSQL
 
-    UseCase->>Repo: Save run metadata, statement, provider rows and results
-    Repo->>Repo: Compute SHA-256 and result counts
-    Repo->>PG: BEGIN transaction
-    Repo->>PG: Insert job_run_log
-    Repo->>PG: Insert recon_run
+    UseCase->>Repo: claim_run(statement bytes, scope)
+    Repo->>Repo: Compute SHA-256
+    Repo->>PG: Commit RUNNING job_run_log and recon_run
+    UseCase->>Repo: complete_run(provider rows and results)
+    Repo->>Repo: Compute result counts
+    Repo->>PG: BEGIN detail transaction
     Repo->>PG: Insert provider_txn rows
     Repo->>PG: Insert recon_result rows with lineage
+    Repo->>PG: Update job_run_log and recon_run to COMPLETED
     alt Every write succeeds
         Repo->>PG: COMMIT
         PG-->>Repo: Persisted run
-        Repo-->>UseCase: job_run_id
+        Repo-->>UseCase: Completed run
     else Constraint or dependency failure
         Repo->>PG: ROLLBACK
         Repo-->>UseCase: Persistence error
@@ -62,17 +64,17 @@ sequenceDiagram
 
 ### Processing
 
-1. Repository tạo `job_run_id`, checksum và result counter.
-2. Ghi bốn nhóm records trong cùng PostgreSQL transaction. Scope statement đã được `RunMatching` kiểm tra; matching engine tạo result từ chính các input rows đó.
-3. Trả `job_run_id` sau commit; database exception propagate nếu rollback.
+1. Repository tính checksum, claim input và tạo `job_run_id`/`run_id` ở F06; `RUNNING` được commit trước khi xử lý.
+2. Ghi provider/results và cập nhật metadata/metrics thành `COMPLETED` trong cùng PostgreSQL detail transaction. Scope statement được `RunMatching` kiểm tra; matching engine tạo result từ chính các input rows đó.
+3. Nếu detail transaction lỗi, rollback toàn bộ detail; F06 ghi `FAILED` bằng transaction riêng.
 
 ### Components
 
 | Component | Change |
 |---|---|
-| `PostgreReconRepository.save_run` | Đã triển khai completed-run transaction. |
+| `PostgreReconRepository.complete_run` | Đã triển khai detail + completion transaction cho run đã claim. |
 | Migrations `0002`–`0005` | Đã tạo schema, constraints, indexes và khóa ngoại tới run. |
-| Durable lifecycle store | Chưa triển khai; thuộc F06. |
+| Durable lifecycle store | Đã triển khai ở F06 trong cùng adapter. |
 
 ## 4. API & Data
 
@@ -84,15 +86,15 @@ sequenceDiagram
 
 ### Request/Response
 
-- Input: run metadata, statement bytes/path, provider transactions và results.
-- Output: generated `job_run_id`.
+- Input: claimed run metadata, provider transactions và results.
+- Output: detail và completed metadata được commit nguyên tử; run/job IDs đã được tạo ở F06.
 
 ### Database
 
 | Table / Collection | Change |
 |---|---|
-| `job_run_log` | Hiện insert thẳng `COMPLETED` với count metrics. |
-| `recon_run` | Insert `COMPLETED` với tenant/timezone; cutoff tạm giữ `00:00`, lateness dùng DB default `0` cho đến F07. |
+| `job_run_log` | Insert `RUNNING` ở claim; cập nhật `COMPLETED` cùng detail với count metrics hoặc `FAILED` sau rollback. |
+| `recon_run` | Insert `RUNNING` với tenant/timezone; cutoff tạm giữ `00:00`, lateness dùng DB default `0` cho đến F07. |
 | `provider_txn` | Mỗi record là một dòng input provider đã chuẩn hóa, kèm file/row và raw JSON. |
 | `recon_result` | Mỗi record là một kết luận đối soát; giữ snapshot ID, amount/currency hai phía, delta và reason để đọc báo cáo. Các cột phía provider lặp có chủ ý; source file/row nối lại với `provider_txn`. |
 
@@ -104,19 +106,19 @@ System transactions vẫn nằm ở MongoDB; `system_txn_id` cùng `region`/`ten
 
 | Scenario | Expected Behavior |
 |---|---|
-| Happy path | Cả bốn nhóm records commit cùng nhau. |
+| Happy path | Run/job metadata được claim trước; provider/results và cập nhật `COMPLETED` commit cùng nhau. |
 | Invalid input | DB constraints reject invalid/duplicate records và rollback. |
-| Duplicate request | Unique input constraint raise database error; chưa có idempotent response. |
-| Timeout / dependency error | Rollback transaction; hiện không để lại `FAILED` audit run. |
-| Retry / concurrent processing | Concurrent same input chỉ một insert thắng constraint; caller thua nhận lỗi. |
+| Duplicate request | F06 trả completed run cũ hoặc `409` khi run đang được xử lý. |
+| Timeout / dependency error | Rollback detail transaction; F06 giữ `FAILED` audit run nếu còn kết nối DB. |
+| Retry / concurrent processing | F06 dùng advisory lock; concurrent caller nhận `409`, retry FAILED dùng lại run/job IDs. |
 
 ## 6. Testing
 
 | Test Case | Expected Result |
 |---|---|
-| Successful save | Job/run/provider/results cùng tồn tại và checksum đúng. |
+| Successful save | Job/run đã claim, provider/results và completed metrics cùng tồn tại; checksum đúng. |
 | Insert failure midway | Không có partial detail records. |
-| Duplicate input | Constraint hoạt động; desired existing-run behavior thuộc F06. |
+| Duplicate input | F06 đọc completed run cũ; unique constraint từ `0003` bảo vệ không tạo run trùng. |
 | Tenant/timezone persistence | Tenant và business timezone được kiểm tra trong unit test repository. |
 | Cutoff/lateness policy persistence | `[TBD]` — chờ rule F07 được xác nhận. |
 
