@@ -5,8 +5,19 @@ from pathlib import Path
 from typing import Protocol
 from uuid import UUID
 
+from canonical.domain import CanonicalTransaction
 from reconciliation.domain import ProviderTransaction, ReconResult
 from shared_kernel import Region
+
+
+class SystemTransactionSource(Protocol):
+    def get_transactions(
+        self,
+        region: Region,
+        tenant_id: str | None,
+        provider: str,
+        business_date: date,
+    ) -> tuple[CanonicalTransaction, ...]: ...
 
 
 class ReconRepository(Protocol):
@@ -54,5 +65,5 @@ class ParseReport:
         return not self.issues
 
 
-class ProviderStatementParse(Protocol):
+class ProviderStatementParser(Protocol):
     def parse(self, content: bytes, source_file: str) -> ParseReport: ...
