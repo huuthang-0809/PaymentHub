@@ -7,7 +7,7 @@
 | Feature | Reconciliation summary, report, export và query API |
 | Owner | `[TBD]` |
 | Ticket | `[TBD]` |
-| Status | `Partially implemented`: financial summary qua POST; query/export còn thiết kế. |
+| Status | `Partially implemented`: POST summary, GET query và CSV/XLSX/Parquet export đã có; validation issue persistence còn thiết kế. |
 | Purpose | Cho phép đọc trạng thái/audit results, tổng hợp tiền đúng theo currency và tải report reconciliation. |
 
 ## 2. Requirements
@@ -113,17 +113,17 @@ sequenceDiagram
 | Method | Endpoint | Description |
 |---|---|---|
 | POST | `/recon/runs` | Đã có: trả counts cũ và `financial_summary`, gồm totals, tỷ lệ parent refund và cross-check. |
-| GET | `/recon/runs` | Danh sách run theo contract/filter `[TBD]`. |
+| GET | `/recon/runs` | Danh sách run có filter và cursor; xem mục 8. |
 | GET | `/recon/runs/{run_id}/summary` | Run status, scope, counts và totals. |
 | GET | `/recon/runs/{run_id}/results` | Filtered/paginated detailed results. |
-| GET | `/recon/runs/{run_id}/report` | Xuất/tải CSV hoặc XLSX `[TBD]`. |
-| GET | `/recon/runs/{run_id}/export.parquet` | Export Parquet `[TBD]`. |
+| GET | `/recon/runs/{run_id}/report` | Xuất/tải CSV hoặc XLSX. |
+| GET | `/recon/runs/{run_id}/export.parquet` | Export Parquet có data dictionary. |
 | GET | `/recon/runs/{run_id}/validation-issues` | Optional validation report endpoint `[Need Confirm]`. |
 
 ### Request/Response
 
 POST đã trả `breakdowns` và `refunds_by_currency` trong `financial_summary`.
-GET, exports và `meta.data_as_of` vẫn là contract mục tiêu cho phần còn lại của F08.
+GET query, exports và metadata đã implement theo contract bên dưới.
 
 - Result filter tối thiểu hỗ trợ `result`, ví dụ `AMOUNT_MISMATCH`; các filter khác `[TBD]`.
 - Cursor pagination có stable ordering; sort chỉ nhận field trong whitelist.
@@ -266,3 +266,36 @@ migration không backfill từ dữ liệu hiện tại vì sẽ thay đổi sna
 | Cross-check refund của India có cần lấy toàn bộ refund children thành công qua nhiều business date để so với counter tích lũy `amountRefunded` trên payment gốc, hay chỉ kiểm tra dữ liệu trong run hàng ngày? Nếu cần dữ liệu nhiều ngày, phạm vi lịch sử và thời điểm chốt parent/children là gì; khi thiếu parent hoặc children thì report thể hiện chưa đủ dữ liệu như thế nào? | Product/Finance | `[Need Confirm]` |
 
 ---
+
+## 8. Query/export API đã triển khai
+
+- `GET /recon/runs`: filter `region`, `tenant_id`, `provider`, `business_date`,
+  `status` (`RUNNING`, `FAILED`, `COMPLETED`); `limit` mặc định 50, tối đa 200;
+  `cursor`; whitelist sort hiện chỉ có `run_id` tăng dần.
+- `GET /recon/runs/{run_id}/summary`: metadata run, `system_count`,
+  `provider_count` (counts đầu vào đã lưu), classification summary và financial summary.
+- `GET /recon/runs/{run_id}/results`: filter `result`, `limit`, `cursor`;
+  whitelist sort chỉ có `result_key` tăng dần. Mỗi item có result key và evidence
+  từ persisted result, không có raw payload. Cursor ràng buộc với run/filter/sort;
+  cursor sai hoặc dùng sai query trả 422.
+- `GET /recon/runs/{run_id}/report?format=csv|xlsx`: mặc định CSV UTF-8 BOM;
+  XLSX lưu tiền dưới dạng text để bảo toàn integer lớn. Chuỗi CSV có thể được
+  spreadsheet hiểu thành công thức được escape bằng dấu nháy đơn.
+- `GET /recon/runs/{run_id}/export.parquet`: monetary fields là decimal128(38,0),
+  giữ null và currency từng phía; schema metadata có `data_dictionary`, `data_as_of`.
+  Test dùng DuckDB để kiểm tra count và tổng tiền.
+
+JSON GET có `meta.data_as_of`: summary/results dùng `finished_at` của snapshot
+hoàn tất; metadata run chưa hoàn tất dùng `started_at`; danh sách run dùng thời
+điểm đọc. POST dùng thời điểm tạo response. Downloads có header `X-Data-As-Of`,
+XLSX có sheet Metadata, Parquet có schema metadata tương ứng.
+
+Run không tồn tại trả 404. RUNNING/FAILED trả summary metadata với counts và
+financial summary null; results/export trả 409. Snapshot metadata/results đọc
+trong transaction repeatable-read, không query lại MongoDB.
+
+Giới hạn hiện tại: phân trang thực hiện trong bộ nhớ sau khi đọc dữ liệu;
+export cũng tạo toàn bộ file trong bộ nhớ. Danh sách run là dữ liệu sống giữa
+các request; cursor không đóng băng tập run khi có run mới. Authorization/masking
+chi tiết vẫn chờ policy chung. Endpoint validation-issues và persistence cho
+validation issues chưa triển khai (endpoint optional trong contract).

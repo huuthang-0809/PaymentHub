@@ -167,3 +167,30 @@ def test_pipeline_replay_and_failed_detail_transaction() -> None:
         assert connection.execute(
             "SELECT status FROM recon_run WHERE run_id = %s", (claim.run_id,)
         ).fetchone()[0] == "COMPLETED"
+
+
+def test_query_reads_committed_snapshot_and_filters_runs():
+    from reconciliation.adapters.query import PostgreReconQuery
+
+    provider = f"TEST{uuid4().hex[:12].upper()}"
+    with psycopg.connect(os.environ['F06_TEST_DATABASE_URL']) as connection:
+        repo = PostgreReconRepository(connection)
+        query = PostgreReconQuery(connection)
+        with _claim(repo, provider) as claim:
+            metadata, stored = query.snapshot(claim.run_id)
+            assert metadata['status'] == 'RUNNING'
+            assert stored is None
+            row = ReconResult(
+                run_id=str(claim.run_id), result_type=ReconResultType.MISSING_IN_PROVIDER,
+                region=Region.VN, tenant_id=None, provider=provider,
+                txn_type=TxnType.PAYMENT, system_txn_id='snapshot',
+                system_amount_minor=123, system_currency='VND',
+            )
+            repo.complete_run(claim=claim, system_rows=1, provider_txns=[], results=[row])
+        metadata, stored = query.snapshot(claim.run_id)
+        assert metadata['status'] == 'COMPLETED'
+        assert metadata['finished_at'] is not None
+        assert stored.results == (row,)
+        assert query.snapshot(uuid4()) is None
+        runs = query.runs(provider=provider, status='COMPLETED')
+        assert [run['run_id'] for run in runs] == [claim.run_id]
