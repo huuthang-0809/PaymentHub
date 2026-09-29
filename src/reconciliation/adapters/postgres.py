@@ -3,6 +3,7 @@ from collections import Counter
 from datetime import date, time
 from pathlib import Path
 from uuid import UUID, uuid4
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from psycopg import Connection
 from psycopg.types.json import Jsonb
@@ -14,8 +15,20 @@ from shared_kernel import Region
 class PostgreReconRepository:
     """Persist one complete reconciliation run in a single transaction."""
 
-    def __init__(self, connection: Connection) -> None:
+    def __init__(
+        self,
+        connection: Connection,
+        *,
+        business_timezone: str = "UTC",
+    ) -> None:
+        try:
+            ZoneInfo(business_timezone)
+        except ZoneInfoNotFoundError as error:
+            raise ValueError(
+                f"Unknown business timezone: {business_timezone}"
+            ) from error
         self.connection = connection
+        self.business_timezone = business_timezone
 
     def save_run(
         self,
@@ -23,6 +36,7 @@ class PostgreReconRepository:
         run_id: UUID,
         business_date: date,
         region: Region,
+        tenant_id: str | None,
         provider: str,
         statement: Path,
         statement_content: bytes,
@@ -37,14 +51,18 @@ class PostgreReconRepository:
             cursor.execute(
                 """
                 INSERT INTO job_run_log (
-                    job_run_id, job_name, business_date, region, provider,
+                    job_run_id, job_name, business_date, region, tenant_id, provider,
                     status, finished_at, metrics
-                ) VALUES (%s, 'reconciliation', %s, %s, %s, 'COMPLETED', now(), %s)
+                ) VALUES (
+                    %s, 'reconciliation', %s, %s, %s, %s,
+                    'COMPLETED', now(), %s
+                )
                 """,
                 (
                     job_run_id,
                     business_date,
                     region.value,
+                    tenant_id,
                     provider,
                     Jsonb(
                         {
@@ -58,11 +76,11 @@ class PostgreReconRepository:
             cursor.execute(
                 """
                 INSERT INTO recon_run (
-                    run_id, job_run_id, business_date, region, provider,
+                    run_id, job_run_id, business_date, region, tenant_id, provider,
                     source_file, file_checksum, business_timezone, cutoff_time,
                     status, finished_at
                 ) VALUES (
-                    %s, %s, %s, %s, %s, %s, %s, 'Asia/Ho_Chi_Minh', %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                     'COMPLETED', now()
                 )
                 """,
@@ -71,9 +89,11 @@ class PostgreReconRepository:
                     job_run_id,
                     business_date,
                     region.value,
+                    tenant_id,
                     provider,
                     str(statement),
                     checksum,
+                    self.business_timezone,
                     time.min,
                 ),
             )

@@ -27,6 +27,7 @@ class ReconRepository(Protocol):
         run_id: UUID,
         business_date: date,
         region: Region,
+        tenant_id: str | None,
         provider: str,
         statement: Path,
         statement_content: bytes,

@@ -89,4 +89,5 @@ def test_pipeline_accepts_adapter_output_without_loading_mongo(tmp_path: Path) -
     assert source.request == (Region.VN, None, "ONEPAY", date(2026, 9, 22))
     assert repository.saved is not None
     assert repository.saved["provider"] == "ONEPAY"
+    assert repository.saved["tenant_id"] is None
     assert len(repository.saved["results"]) == 1
