@@ -8,7 +8,12 @@ from typing import Any
 from bson.decimal128 import Decimal128
 from pymongo import MongoClient, ReplaceOne
 
-from .generator import COLLECTION, GeneratorConfig, generate_dataset
+from .generator import (
+    COLLECTION,
+    GeneratorConfig,
+    generate_dataset,
+    generate_provider_statements,
+)
 
 
 def _mongo_value(value: Any) -> Any:
@@ -22,9 +27,16 @@ def _mongo_value(value: Any) -> Any:
 
 
 def _write_documents(
-    client: MongoClient[Any], database: str, documents: list[dict[str, Any]]
+    client: MongoClient[Any],
+    database: str,
+    documents: list[dict[str, Any]],
+    batch_id: str,
 ) -> None:
     collection = client[database][COLLECTION]
+    generated_ids = [document["_id"] for document in documents]
+    collection.delete_many(
+        {"testBatchId": batch_id, "_id": {"$nin": generated_ids}}
+    )
     batch_size = 500
     for offset in range(0, len(documents), batch_size):
         batch = documents[offset : offset + batch_size]
@@ -43,11 +55,12 @@ def main() -> None:
     mongo_uri = os.getenv("MONGO_URI", "mongodb://mongodb:27017")
     output_path = Path(os.getenv("GROUND_TRUTH_PATH", "/output/ground_truth.json"))
     datasets, ground_truth = generate_dataset(config)
+    statements = generate_provider_statements(datasets, config)
 
     with MongoClient(mongo_uri, serverSelectionTimeoutMS=10_000) as client:
         client.admin.command("ping")
         for database, documents in datasets.items():
-            _write_documents(client, database, documents)
+            _write_documents(client, database, documents, config.batch_id)
         client["paymenthub_generator"]["generation_runs"].replace_one(
             {"_id": config.batch_id},
             {
@@ -62,6 +75,15 @@ def main() -> None:
         )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    statement_directory = Path(
+        os.getenv("PROVIDER_STATEMENTS_DIR", "/output/provider-statements")
+    )
+    statement_directory.mkdir(parents=True, exist_ok=True)
+    statement_rows = {}
+    for filename, content in statements.items():
+        (statement_directory / filename).write_text(content, encoding="utf-8")
+        statement_rows[filename] = max(0, len(content.splitlines()) - 1)
+    ground_truth["provider_statements"] = statement_rows
     output_path.write_text(
         json.dumps(ground_truth, indent=2, sort_keys=True), encoding="utf-8"
     )
