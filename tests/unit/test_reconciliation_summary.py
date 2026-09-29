@@ -92,7 +92,12 @@ def test_duplicates_and_not_reconcilable_do_not_affect_any_financial_metrics():
         payment(result_type=Result.NOT_RECONCILABLE, txn_type=TxnType.CARD_LINK),
     ]
     summary = build_financial_summary(primary + extra)
-    assert summary == build_financial_summary(primary)
+    baseline = build_financial_summary(primary)
+    assert replace(summary, breakdowns=baseline.breakdowns) == baseline
+    excluded = [b for b in summary.breakdowns
+                if b.result in {"DUPLICATE", "NOT_RECONCILABLE"}]
+    assert sum(b.system_count for b in excluded) == 3
+    assert all(not b.totals_by_currency for b in excluded)
     assert summary.totals_by_currency[0].system_amount_minor == 130
     assert summary.refund_cross_checks[0].successful_child_amount_minor == 30
     assert summary.refund_cross_checks[0].status == "MATCHED"
@@ -165,3 +170,53 @@ def test_refunded_parent_without_children_and_ambiguous_parent_are_visible():
         payment(), payment(system_txn_id="another-parent"), refund(),
     ]).refund_cross_checks
     assert checks[0].status == "AMBIGUOUS_PARENT"
+
+
+def test_breakdowns_count_each_side_and_keep_currency_totals_separate():
+    rows = [
+        payment(), refund(),
+        payment(result_type=Result.MISSING_IN_PROVIDER, source_row_number=None,
+                provider_amount_minor=None, provider_currency=None),
+        payment(result_type=Result.MISSING_IN_SYSTEM, system_txn_id=None,
+                system_amount_minor=None, system_currency=None, txn_type=None),
+        payment(result_type=Result.CURRENCY_MISMATCH, provider_currency="USD"),
+        payment(region=Region.ASIA, tenant_id="asia-id", provider="ESPAY"),
+        payment(region=Region.ASIA, tenant_id="asia-ph", provider="ESPAY"),
+        payment(region=Region.VN, provider="ONEPAY"),
+        payment(result_type=Result.INVALID_DATA, system_amount_minor=None,
+                source_row_number=None, provider_amount_minor=None, provider_currency=None),
+    ]
+    summary = build_financial_summary(rows)
+    assert summary == build_financial_summary(reversed(rows))
+    assert len(summary.breakdowns) == 9
+    assert sum(b.system_count for b in summary.breakdowns) == 8
+    assert sum(b.provider_count for b in summary.breakdowns) == 7
+    mismatch = next(b for b in summary.breakdowns if b.result == "CURRENCY_MISMATCH")
+    assert [t.currency for t in mismatch.totals_by_currency] == ["INR", "USD"]
+    invalid = next(b for b in summary.breakdowns if b.result == "INVALID_DATA")
+    assert invalid.system_count == 1
+    assert invalid.totals_by_currency[0].system_missing_amount_count == 1
+
+
+def test_refund_totals_use_successful_system_children_and_expose_missing_data():
+    rows = [payment(refunded_amount_minor=999), refund(),
+            refund(system_status=Status.PARTIAL_REFUNDED, system_amount_minor=20),
+            refund(system_status=Status.REFUNDED, system_amount_minor=10),
+            refund(system_status=Status.PENDING), refund(system_status=Status.FAILED),
+            refund(system_status=Status.UNKNOWN), refund(system_txn_id=None),
+            refund(result_type=Result.DUPLICATE),
+            refund(result_type=Result.NOT_RECONCILABLE),
+            refund(system_amount_minor=None),
+            refund(result_type=Result.INVALID_DATA, system_amount_minor=999),
+            refund(region=Region.ASIA, system_currency="USD", system_amount_minor=5),
+            refund(system_currency=None),
+            refund(system_currency="VND", system_amount_minor=None)]
+    totals = {t.currency: t for t in build_financial_summary(rows).refunds_by_currency}
+    assert (totals["INR"].count, totals["INR"].amount_minor,
+            totals["INR"].missing_amount_count) == (5, 60, 2)
+    assert totals["USD"].amount_minor == 5
+    assert totals[None].count == 1
+    assert totals[None].amount_minor is None
+    assert totals["VND"].amount_minor is None
+    assert build_financial_summary([]).refunds_by_currency == ()
+    assert build_financial_summary([]).breakdowns == ()

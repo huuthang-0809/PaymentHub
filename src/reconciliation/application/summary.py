@@ -47,17 +47,66 @@ class RefundCrossCheck:
 
 
 @dataclass(frozen=True)
+class SummaryBreakdown:
+    region: str
+    tenant_id: str | None
+    provider: str
+    txn_type: str | None
+    result: str
+    system_count: int
+    provider_count: int
+    totals_by_currency: tuple[CurrencyTotals, ...]
+    unallocated_currency_count: int
+
+
+@dataclass(frozen=True)
+class RefundCurrencyTotals:
+    currency: str | None
+    count: int
+    amount_minor: int | None
+    missing_amount_count: int
+
+
+@dataclass(frozen=True)
 class FinancialSummary:
     totals_by_currency: tuple[CurrencyTotals, ...]
     unallocated_currency_count: int
     refund_parent_metrics: RefundParentMetrics
     refund_cross_checks: tuple[RefundCrossCheck, ...]
+    breakdowns: tuple[SummaryBreakdown, ...]
+    refunds_by_currency: tuple[RefundCurrencyTotals, ...]
 
 
 def build_financial_summary(results: Iterable[ReconResult]) -> FinancialSummary:
-    rows = tuple(row for row in results if row.result_type not in {
+    all_rows = tuple(results)
+    rows = tuple(row for row in all_rows if row.result_type not in {
         ReconResultType.DUPLICATE, ReconResultType.NOT_RECONCILABLE,
     })
+    totals, unallocated = _currency_totals(rows)
+    parents = tuple(row for row in rows if row.system_txn_id and row.txn_type in {
+        TxnType.PAYMENT, TxnType.LOAD,
+    })
+    refunded = sum(_is_refunded(parent) for parent in parents)
+    missing = sum(
+        parent.system_status in {None, CanonicalStatus.UNKNOWN}
+        and not _is_refunded(parent)
+        for parent in parents
+    )
+    rate = (
+        format(Decimal(refunded) / Decimal(len(parents)), ".6f")
+        if parents and not missing else None
+    )
+    return FinancialSummary(
+        totals, unallocated,
+        RefundParentMetrics(len(parents), refunded, missing, rate),
+        _refund_cross_checks(rows, parents),
+        _breakdowns(all_rows), _refund_totals(rows),
+    )
+
+
+def _currency_totals(
+    rows: tuple[ReconResult, ...],
+) -> tuple[tuple[CurrencyTotals, ...], int]:
     amounts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     unallocated = 0
     for row in rows:
@@ -100,24 +149,48 @@ def build_financial_summary(results: Iterable[ReconResult]) -> FinancialSummary:
         )
         for currency, bucket in sorted(amounts.items())
     )
-    parents = tuple(row for row in rows if row.system_txn_id and row.txn_type in {
-        TxnType.PAYMENT, TxnType.LOAD,
-    })
-    refunded = sum(_is_refunded(parent) for parent in parents)
-    missing = sum(
-        parent.system_status in {None, CanonicalStatus.UNKNOWN}
-        and not _is_refunded(parent)
-        for parent in parents
-    )
-    rate = (
-        format(Decimal(refunded) / Decimal(len(parents)), ".6f")
-        if parents and not missing else None
-    )
-    return FinancialSummary(
-        totals, unallocated,
-        RefundParentMetrics(len(parents), refunded, missing, rate),
-        _refund_cross_checks(rows, parents),
-    )
+    return totals, unallocated
+
+
+def _breakdowns(rows: tuple[ReconResult, ...]) -> tuple[SummaryBreakdown, ...]:
+    groups: dict[tuple, list[ReconResult]] = defaultdict(list)
+    for row in rows:
+        groups[(row.region.value, row.tenant_id, row.provider,
+                row.txn_type.value if row.txn_type else None,
+                row.result_type.value)].append(row)
+    output = []
+    for key, group in sorted(groups.items(), key=lambda item: str(item[0])):
+        financial_rows = tuple(row for row in group if row.result_type not in {
+            ReconResultType.DUPLICATE, ReconResultType.NOT_RECONCILABLE,
+        })
+        totals, unallocated = _currency_totals(financial_rows)
+        output.append(SummaryBreakdown(
+            *key,
+            system_count=sum(row.system_txn_id is not None for row in group),
+            provider_count=sum(row.source_row_number is not None for row in group),
+            totals_by_currency=totals,
+            unallocated_currency_count=unallocated,
+        ))
+    return tuple(output)
+
+
+def _refund_totals(rows: tuple[ReconResult, ...]) -> tuple[RefundCurrencyTotals, ...]:
+    groups: dict[str | None, list[ReconResult]] = defaultdict(list)
+    for row in rows:
+        if (row.system_txn_id is not None and row.txn_type is TxnType.REFUND
+                and row.system_status in SUCCESSFUL_REFUND_STATUSES):
+            groups[row.system_currency].append(row)
+    output = []
+    for currency, children in sorted(groups.items(), key=lambda item: str(item[0])):
+        valid = [row for row in children if row.system_amount_minor is not None
+                 and row.result_type is not ReconResultType.INVALID_DATA]
+        output.append(RefundCurrencyTotals(
+            currency, len(children),
+            sum(int(row.system_amount_minor) for row in valid)
+            if valid and currency else None,
+            len(children) - len(valid),
+        ))
+    return tuple(output)
 
 
 def _is_refunded(parent: ReconResult) -> bool:

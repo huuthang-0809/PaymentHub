@@ -122,8 +122,8 @@ sequenceDiagram
 
 ### Request/Response
 
-Hiện chỉ POST được implement. GET, exports, `refunds_by_currency` và
-`meta.data_as_of` dưới đây là contract mục tiêu cho phần còn lại của F08.
+POST đã trả `breakdowns` và `refunds_by_currency` trong `financial_summary`.
+GET, exports và `meta.data_as_of` vẫn là contract mục tiêu cho phần còn lại của F08.
 
 - Result filter tối thiểu hỗ trợ `result`, ví dụ `AMOUNT_MISMATCH`; các filter khác `[TBD]`.
 - Cursor pagination có stable ordering; sort chỉ nhận field trong whitelist.
@@ -138,7 +138,7 @@ Hiện chỉ POST được implement. GET, exports, `refunds_by_currency` và
 ### Financial summary đã implement
 
 `POST /recon/runs` giữ `summary` là counts theo classification và bổ sung
-`financial_summary` với ba nhóm số liệu. `build_financial_summary` tính từ
+`financial_summary` với các nhóm số liệu bên dưới. `build_financial_summary` tính từ
 `ReconResult`; rerun dùng cùng hàm trên persisted results, không đọc lại nguồn.
 
 | Field | Cách tính |
@@ -147,6 +147,22 @@ Hiện chỉ POST được implement. GET, exports, `refunds_by_currency` và
 | `unallocated_currency_count` | Số record phía system/provider không có currency để phân bổ; không gán currency mặc định. |
 | `refund_parent_metrics` | Count parent đủ điều kiện, count parent đã refund, count thiếu evidence và tỷ lệ theo quy ước bên dưới. |
 | `refund_cross_checks[]` | Region, tenant, provider, parent reference, currency, count/amount child thành công, counter parent và trạng thái so sánh. Chỉ VN/India. |
+
+`refunds_by_currency[]` đã implement với `currency`, `count`, `amount_minor`,
+`missing_amount_count`. Chỉ lấy system refund child có status `SUCCESS`,
+`REFUNDED` hoặc `PARTIAL_REFUNDED`, sau khi loại `DUPLICATE` và
+`NOT_RECONCILABLE`; áp dụng cả VN, Asia và India. Không dựa vào provider status
+vì persisted result hiện chưa có evidence này. Counter parent không được cộng.
+Count gồm cả child thành công thiếu/invalid amount; amount chỉ cộng phần hợp lệ,
+không có amount hợp lệ thì trả `null`. `missing_amount_count` đếm child thiếu
+amount hoặc có result `INVALID_DATA`. Currency thiếu được giữ trong nhóm
+`currency=null`, có count nhưng `amount_minor=null`, không gán currency mặc định.
+
+`breakdowns[]` nhóm theo `(region, tenant_id, provider, txn_type, result)`;
+`txn_type` thiếu được giữ là `null`. Mỗi nhóm có `system_count`, `provider_count`,
+`totals_by_currency` và `unallocated_currency_count`, dùng cùng quy tắc tiền như
+summary toàn run. Thứ tự nhóm/currency ổn định, không phụ thuộc thứ tự input.
+Cả hai trường mới được tái tạo từ persisted results khi replay.
 
 Quy ước tạm thời cho tỷ lệ parent đã refund:
 
@@ -161,16 +177,19 @@ Quy ước tạm thời cho tỷ lệ parent đã refund:
   dương thì rate `null`; trường hợp sau tăng `missing_evidence_count`.
   Runs cũ không có refund evidence không được tự coi là chưa refund.
 
-### Các trường summary còn cần bổ sung — đề xuất để review
+### Counts và breakdown
 
 Các trường dưới đây bổ sung contract theo mục 5.7 tài liệu gốc. Counts hiện có
-ở `system_rows`/`provider_rows` trước dedupe; breakdowns chưa implement.
+ở `system_rows`/`provider_rows` trước dedupe. Breakdown đã implement; count trong
+mỗi nhóm đếm result record có `system_txn_id` / `source_row_number` tương ứng,
+không phải unique transaction count và không phụ thuộc amount. Nhóm duplicate
+và not-reconcilable vẫn có counts nhưng không có monetary totals.
 
 | Field | Ý nghĩa / quy tắc |
 |---|---|
 | `system_count` | Số record phía system trong phạm vi run; không phụ thuộc amount có hợp lệ hay không. Cần thống nhất cách thể hiện raw count và unique count khi có duplicate. |
 | `provider_count` | Số record phía provider trong phạm vi run; phân biệt với số result rows và số cặp matched. Cần thống nhất raw count/unique count như phía system. |
-| `breakdowns[]` | Mỗi nhóm mang `region`, `tenant_id`, `provider`, `txn_type`, `result`; có counts hai phía và `totals_by_currency`. Dù run chỉ có một scope vẫn cần breakdown theo transaction type/result. |
+| `breakdowns[]` | Đã implement. Mỗi nhóm mang `region`, `tenant_id`, `provider`, `txn_type`, `result`; có counts hai phía và `totals_by_currency`. Dù run chỉ có một scope vẫn cần breakdown theo transaction type/result. |
 
 ### Giả định hiện tại — India refund cross-check
 
