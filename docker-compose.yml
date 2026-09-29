@@ -51,7 +51,7 @@ services:
   migrate:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: docker/api.Dockerfile
     command: [ "alembic", "upgrade", "head" ]
     environment:
       - DATABASE_URL=postgresql+psycopg://paymenthub:${POSTGRES_PASSWORD:-paymenthub}@postgres:5432/paymenthub
@@ -62,7 +62,7 @@ services:
   api:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: docker/api.Dockerfile
     command: ["uvicorn", "bootstrap.main:app", "--host", "0.0.0.0", "--port", "8000"]
     environment:
       DATABASE_URL: postgresql://paymenthub:${POSTGRES_PASSWORD:-paymenthub}@postgres:5432/paymenthub

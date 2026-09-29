@@ -10,7 +10,7 @@ from canonical.adapters.india import india_to_canonical
 from canonical.adapters.vn import vn_to_canonical
 from reconciliation.adapters import CsvFixtureParser
 from reconciliation.domain import MatchingEngine, ReconResultType
-from synthetic_data.generator import (
+from tests.data_generator.generator import (
     ASIA_MAPPING,
     DATABASE_ASIA_ID,
     DATABASE_ASIA_PH,

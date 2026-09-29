@@ -27,7 +27,6 @@ share/python-wheels/
 tests/generated/*
 !tests/generated/.gitkeep
 !tests/generated/README.md
-generated/provider-statements/
 .installed.cfg
 *.egg
 MANIFEST

@@ -51,7 +51,8 @@ class CsvFixtureParser:
             )
 
         try:
-            dialect = csv.Sniffer().sniff("\n".join(text.splitlines()[:10]), delimiters=",;|\t")
+            sample = "\n".join(text.splitlines()[:10])
+            dialect = csv.Sniffer().sniff(sample, delimiters=",;|\t") # Sniffer.sniff find out which delimiter character is actually being used.
         except csv.Error:
             return self._file_error(
                 ValidationCode.INVALID_DELIMITER, "cannot detect CSV delimiter"
@@ -61,8 +62,8 @@ class CsvFixtureParser:
                 ValidationCode.INVALID_DELIMITER, "fixture delimiter must be comma"
             )
 
-        csv_rows = csv.reader(StringIO(text), dialect)
-        header = next(csv_rows, [])
+        csv_rows = csv.reader(StringIO(text), dialect)  #StringIO emulate string as a hidden file for csv.reader to read
+        header = next(csv_rows, [])                     # next return first line of csv_rows.
         missing = [column for column in REQUIRED_COLUMNS if column not in header]
         if missing:
             return self._file_error(
