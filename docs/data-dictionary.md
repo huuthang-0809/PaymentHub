@@ -442,7 +442,8 @@ Schema chỉ dùng kiểu dựng sẵn của PostgreSQL. Mã có miền đóng d
 
 | Cột | SQL type | Nullable / default / ràng buộc tại cột | Ý nghĩa |
 |---|---|---|---|
-| `result_id` | `bigint` | Không; `GENERATED ALWAYS AS IDENTITY PRIMARY KEY` | Identity bigint nội bộ cho dòng kết quả. |
+| `result_id` | `bigint` | Không; `GENERATED ALWAYS AS IDENTITY`; thuộc PK với business_date | Identity bigint nội bộ cho dòng kết quả. |
+| `business_date` | `date` | Không; `NOT NULL`; partition key | Snapshot ngày nghiệp vụ từ recon_run; dùng partition pruning, không suy ra từ created_at. |
 | `run_id` | `uuid` | Không; `NOT NULL` | ID run đối soát; UUID ở persistence/API, chuỗi trong domain result. |
 | `job_run_id` | `uuid` | Không; `NOT NULL` | UUID job thực thi; recon_run tham chiếu job_run_log. |
 | `result_key` | `integer` | Không; `NOT NULL; CHECK > 0` | Số thứ tự lưu trong run từ 1; unique với run_id và sắp xếp trực tiếp theo số. |
@@ -471,7 +472,8 @@ Schema chỉ dùng kiểu dựng sẵn của PostgreSQL. Mã có miền đóng d
 
 | Cột | SQL type | Nullable / default / ràng buộc tại cột | Ý nghĩa |
 |---|---|---|---|
-| `provider_row_id` | `bigint` | Không; `GENERATED ALWAYS AS IDENTITY PRIMARY KEY` | Identity bigint nội bộ cho dòng provider. |
+| `provider_row_id` | `bigint` | Không; `GENERATED ALWAYS AS IDENTITY`; thuộc PK với business_date | Identity bigint nội bộ cho dòng provider. |
+| `business_date` | `date` | Không; `NOT NULL`; partition key | Snapshot ngày nghiệp vụ từ recon_run; dùng partition pruning, không suy ra từ transaction_time. |
 | `run_id` | `uuid` | Không; `NOT NULL` | ID run đối soát; UUID ở persistence/API, chuỗi trong domain result. |
 | `job_run_id` | `uuid` | Không; `NOT NULL` | UUID job thực thi; recon_run tham chiếu job_run_log. |
 | `region` | `varchar(5)` | Không; `NOT NULL; CHECK` | Khu vực nguồn; VN, ASIA hoặc INDIA. |
@@ -513,9 +515,9 @@ Schema chỉ dùng kiểu dựng sẵn của PostgreSQL. Mã có miền đóng d
 
 - ingest_message: PK event_id. canonical_event: FK event_id → ingest_message; PK (event_day,event_id), partition RANGE(event_day). Migration chưa tạo partition con; schema này chưa được RunMatching ghi (pipeline hiện đọc Mongo trực tiếp).
 - job_run_log: PK job_run_id; index (job_name,business_date,region,tenant_id,provider).
-- recon_run: PK run_id; FK job_run_id → job_run_log; unique (run_id,job_run_id) và (business_date,provider,file_checksum); index (business_date,region,tenant_id,provider). Khóa idempotency chưa chứa region/tenant; repository kiểm tra và từ chối nếu input trùng khóa nhưng scope khác.
-- recon_result: PK result_id; FK (run_id,job_run_id) → recon_run, ON DELETE CASCADE; unique (run_id,result_key); CHECK giới hạn 9 result_type, result_key > 0 và source_row_number > 0 nếu có. Index (run_id,result_type); partial index (run_id,region,tenant_id,provider,result_type) cho kết quả ngoài MATCHED/FUZZY_MATCHED.
-- provider_txn: PK provider_row_id; FK (run_id,job_run_id) → recon_run, ON DELETE CASCADE; unique (run_id,source_file,source_row_number); CHECK amount_minor >= 0 và source_row_number > 0. Index scope/currency/transaction_time; partial index scope/currency/provider_txn_id khác null; BRIN transaction_time.
+- recon_run: PK run_id; FK job_run_id → job_run_log; unique (run_id,job_run_id), (run_id,job_run_id,business_date) và (business_date,provider,file_checksum); index (business_date,region,tenant_id,provider). Khóa idempotency chưa chứa region/tenant; repository kiểm tra và từ chối nếu input trùng khóa nhưng scope khác.
+- recon_result: partition ngày theo business_date; PK (business_date,result_id); FK (run_id,job_run_id,business_date) → recon_run, ON DELETE CASCADE; unique (business_date,run_id,result_key); CHECK giới hạn 9 result_type, result_key > 0 và source_row_number > 0 nếu có. Index (run_id,result_type,result_key); partial index (run_id,region,tenant_id,provider,result_type) cho kết quả ngoài MATCHED/FUZZY_MATCHED.
+- provider_txn: partition ngày theo business_date; PK (business_date,provider_row_id); FK (run_id,job_run_id,business_date) → recon_run, ON DELETE CASCADE; unique (business_date,run_id,source_file,source_row_number); CHECK amount_minor >= 0 và source_row_number > 0. Index (run_id,source_file,source_row_number), scope/currency/transaction_time; partial index scope/currency/provider_txn_id khác null; BRIN transaction_time.
 - window_aggregate: PK (window_start,region,tenant_id,provider,currency); CHECK window_end > window_start, các count không âm và success_rate trong khoảng 0..1.
 - canonical_event: B-tree (region,tenant_id,provider,updated_at DESC) và BRIN updated_at.
 - Run COMPLETED được replay từ dữ liệu đã lưu, không tạo thêm kết quả; concurrent cùng input bị chặn bằng advisory lock. Run lỗi có thể retry trên cùng ID. Provider rows, results và chuyển trạng thái COMPLETED được commit cùng transaction.

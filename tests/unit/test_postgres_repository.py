@@ -116,15 +116,15 @@ def test_claim_persists_checksum_timezone_scope_and_complete_lineage() -> None:
         "Asia/Jakarta",
         time.min,
     )
-    assert provider_values[:2] == (RUN_ID, job_run_id)
-    assert provider_values[3] == "asia-id"
-    assert provider_values[16].obj == {
+    assert provider_values[:3] == (date(2026, 9, 22), RUN_ID, job_run_id)
+    assert provider_values[4] == "asia-id"
+    assert provider_values[17].obj == {
         "account": "masked",
         "provider_status": "00",
     }
-    assert result_values[:2] == (RUN_ID, job_run_id)
-    assert result_values[2] == 1
-    assert result_values[8:18] == (
+    assert result_values[:3] == (date(2026, 9, 22), RUN_ID, job_run_id)
+    assert result_values[3] == 1
+    assert result_values[9:19] == (
         "system-001",
         "provider-001",
         None,
@@ -147,7 +147,11 @@ def test_complete_run_rolls_back_detail_failure() -> None:
 
     with pytest.raises(RuntimeError, match="result insert failed"):
         repository.complete_run(
-            claim=RunClaim(RUN_ID, UUID("00000000-0000-0000-0000-000000000002")),
+            claim=RunClaim(
+                RUN_ID,
+                UUID("00000000-0000-0000-0000-000000000002"),
+                business_date=date(2026, 9, 22),
+            ),
             system_rows=1,
             provider_txns=[_provider_transaction()],
             results=[_result()],
