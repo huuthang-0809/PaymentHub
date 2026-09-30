@@ -1,0 +1,27 @@
+Finalize GroupAggregate  (cost=41475.00..41526.90 rows=180 width=89) (actual time=155.606..161.558 rows=42 loops=1)
+  Group Key: business_date, provider, result_type
+  Buffers: shared hit=634 read=30610
+  ->  Gather Merge  (cost=41475.00..41517.00 rows=360 width=89) (actual time=155.578..161.342 rows=126 loops=1)
+        Workers Planned: 2
+        Workers Launched: 2
+        Buffers: shared hit=634 read=30610
+        ->  Sort  (cost=40474.97..40475.42 rows=180 width=89) (actual time=137.297..137.309 rows=42 loops=3)
+              Sort Key: business_date, provider, result_type
+              Sort Method: quicksort  Memory: 33kB
+              Buffers: shared hit=634 read=30610
+              Worker 0:  Sort Method: quicksort  Memory: 33kB
+              Worker 1:  Sort Method: quicksort  Memory: 33kB
+              ->  Partial HashAggregate  (cost=40465.53..40468.23 rows=180 width=89) (actual time=137.165..137.214 rows=42 loops=3)
+                    Group Key: business_date, provider, result_type
+                    Batches: 1  Memory Usage: 96kB
+                    Buffers: shared hit=602 read=30610
+                    Worker 0:  Batches: 1  Memory Usage: 96kB
+                    Worker 1:  Batches: 1  Memory Usage: 96kB
+                    ->  Parallel Seq Scan on recon_result_before  (cost=0.00..38712.03 rows=116900 width=30) (actual time=44.545..79.924 rows=93333 loops=3)
+                          Filter: ((business_date >= '2026-01-20'::date) AND (business_date < '2026-01-27'::date))
+                          Rows Removed by Filter: 306667
+                          Buffers: shared hit=602 read=30610
+Planning:
+  Buffers: shared hit=3
+Planning Time: 0.321 ms
+Execution Time: 161.660 ms

@@ -1,0 +1,15 @@
+Limit  (cost=389.35..389.47 rows=51 width=95) (actual time=0.084..0.090 rows=51 loops=1)
+  Buffers: shared hit=28
+  ->  Sort  (cost=389.35..389.59 rows=99 width=95) (actual time=0.083..0.085 rows=51 loops=1)
+        Sort Key: result_key
+        Sort Method: quicksort  Memory: 39kB
+        Buffers: shared hit=28
+        ->  Bitmap Heap Scan on recon_result_before  (cost=5.31..386.07 rows=99 width=95) (actual time=0.017..0.055 rows=100 loops=1)
+              Recheck Cond: ((run_id = '6d38ba92-cce1-9c24-b217-5b3d7ba6d0ca'::uuid) AND ((result_type)::text = 'AMOUNT_MISMATCH'::text))
+              Heap Blocks: exact=26
+              Buffers: shared hit=28
+              ->  Bitmap Index Scan on ix_result_before_attention  (cost=0.00..5.28 rows=99 width=0) (actual time=0.012..0.012 rows=100 loops=1)
+                    Index Cond: ((run_id = '6d38ba92-cce1-9c24-b217-5b3d7ba6d0ca'::uuid) AND ((result_type)::text = 'AMOUNT_MISMATCH'::text))
+                    Buffers: shared hit=2
+Planning Time: 0.132 ms
+Execution Time: 0.106 ms

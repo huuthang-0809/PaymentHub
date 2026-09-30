@@ -1,0 +1,46 @@
+Finalize GroupAggregate  (cost=13106.29..13158.20 rows=180 width=89) (actual time=63.369..67.354 rows=42 loops=1)
+  Group Key: recon_result_after.business_date, recon_result_after.provider, recon_result_after.result_type
+  Buffers: shared hit=7325
+  ->  Gather Merge  (cost=13106.29..13148.30 rows=360 width=89) (actual time=63.347..67.211 rows=54 loops=1)
+        Workers Planned: 2
+        Workers Launched: 2
+        Buffers: shared hit=7325
+        ->  Sort  (cost=12106.27..12106.72 rows=180 width=89) (actual time=52.811..52.818 rows=18 loops=3)
+              Sort Key: recon_result_after.business_date, recon_result_after.provider, recon_result_after.result_type
+              Sort Method: quicksort  Memory: 27kB
+              Buffers: shared hit=7325
+              Worker 0:  Sort Method: quicksort  Memory: 29kB
+              Worker 1:  Sort Method: quicksort  Memory: 28kB
+              ->  Partial HashAggregate  (cost=12096.83..12099.53 rows=180 width=89) (actual time=52.756..52.772 rows=18 loops=3)
+                    Group Key: recon_result_after.business_date, recon_result_after.provider, recon_result_after.result_type
+                    Batches: 1  Memory Usage: 48kB
+                    Buffers: shared hit=7293
+                    Worker 0:  Batches: 1  Memory Usage: 64kB
+                    Worker 1:  Batches: 1  Memory Usage: 48kB
+                    ->  Parallel Append  (cost=0.00..10346.90 rows=116662 width=30) (actual time=0.011..27.525 rows=93333 loops=3)
+                          Buffers: shared hit=7293
+                          ->  Parallel Seq Scan on recon_result_after_20260126 recon_result_after_7  (cost=0.00..1405.94 rows=23529 width=30) (actual time=0.009..6.373 rows=40000 loops=1)
+                                Filter: ((business_date >= '2026-01-20'::date) AND (business_date < '2026-01-27'::date))
+                                Buffers: shared hit=1053
+                          ->  Parallel Seq Scan on recon_result_after_20260120 recon_result_after_1  (cost=0.00..1392.94 rows=23529 width=30) (actual time=0.008..7.380 rows=40000 loops=1)
+                                Filter: ((business_date >= '2026-01-20'::date) AND (business_date < '2026-01-27'::date))
+                                Buffers: shared hit=1040
+                          ->  Parallel Seq Scan on recon_result_after_20260121 recon_result_after_2  (cost=0.00..1392.94 rows=23529 width=30) (actual time=0.013..6.090 rows=40000 loops=1)
+                                Filter: ((business_date >= '2026-01-20'::date) AND (business_date < '2026-01-27'::date))
+                                Buffers: shared hit=1040
+                          ->  Parallel Seq Scan on recon_result_after_20260122 recon_result_after_3  (cost=0.00..1392.94 rows=23529 width=30) (actual time=0.012..6.936 rows=40000 loops=1)
+                                Filter: ((business_date >= '2026-01-20'::date) AND (business_date < '2026-01-27'::date))
+                                Buffers: shared hit=1040
+                          ->  Parallel Seq Scan on recon_result_after_20260123 recon_result_after_4  (cost=0.00..1392.94 rows=23529 width=30) (actual time=0.011..6.028 rows=40000 loops=1)
+                                Filter: ((business_date >= '2026-01-20'::date) AND (business_date < '2026-01-27'::date))
+                                Buffers: shared hit=1040
+                          ->  Parallel Seq Scan on recon_result_after_20260124 recon_result_after_5  (cost=0.00..1392.94 rows=23529 width=30) (actual time=0.009..3.563 rows=13333 loops=3)
+                                Filter: ((business_date >= '2026-01-20'::date) AND (business_date < '2026-01-27'::date))
+                                Buffers: shared hit=1040
+                          ->  Parallel Seq Scan on recon_result_after_20260125 recon_result_after_6  (cost=0.00..1392.94 rows=23529 width=30) (actual time=0.013..15.821 rows=40000 loops=1)
+                                Filter: ((business_date >= '2026-01-20'::date) AND (business_date < '2026-01-27'::date))
+                                Buffers: shared hit=1040
+Planning:
+  Buffers: shared hit=3
+Planning Time: 0.690 ms
+Execution Time: 67.484 ms
