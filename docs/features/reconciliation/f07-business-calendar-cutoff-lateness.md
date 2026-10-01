@@ -24,10 +24,13 @@ Quy ước tạm đang triển khai: `business_date=D` là kỳ nửa mở
 `[(D-1) cutoff, D cutoff)` trong timezone IANA nhận từ input. Provider row ngoài
 kỳ không tham gia matching của run D; vẫn lưu row để audit. Row tại hoặc sau
 cutoff có `late_arriving=true`; row trước đầu kỳ không được đánh dấu muộn.
-Muốn xử lý ở kỳ phù hợp cần submit statement cho business date đó.
-Bản tối giản không tự chuyển row giữa các run và chưa dùng allowed lateness.
-Không thêm migration hoặc đổi khóa idempotency. Rerun cùng input nhưng khác
-timezone/cutoff bị từ chối để bảo toàn policy của run đã lưu.
+Khi chạy kỳ sau, repository đọc các late row từ run đã `COMPLETED` có timestamp
+nằm trong kỳ mới và cùng region/tenant/provider, rồi gộp chúng với statement
+mới trước matching. Nếu statement mới gửi lại cùng định danh, dòng trong
+statement mới được ưu tiên. Carry-over giữ source file/row và `late_arriving`
+để truy vết. Bản tối giản chưa dùng allowed lateness và không mở lại kỳ đích đã
+`COMPLETED`. Không thêm migration hoặc đổi khóa idempotency. Rerun cùng input
+nhưng khác timezone/cutoff bị từ chối để bảo toàn policy của run đã lưu.
 
 ### Non-Functional Requirements
 
@@ -45,6 +48,7 @@ sequenceDiagram
     participant Trigger as Scheduler / API
     participant Calendar as BusinessCalendarPolicy
     participant Orch as Reconciliation Orchestrator
+    participant PG as PostgreSQL
     participant Source as SystemTransactionSource
     participant Mongo as MongoDB
 
@@ -53,6 +57,9 @@ sequenceDiagram
     Note over Trigger,Calendar: Period boundaries and lateness semantics await confirmation in section 8
     Calendar-->>Trigger: Resolved period only after business rules are confirmed
     Trigger->>Orch: Execute target business_date under confirmed rules
+    Orch->>PG: Load completed late rows whose timestamp is in target period
+    PG-->>Orch: Carry-over provider rows
+    Orch->>Orch: Merge with current statement; current file wins duplicates
     Orch->>Source: Load transactions in half-open UTC period
     Source->>Mongo: Query timestamp >= start and < end
     Mongo-->>Source: Raw system documents
@@ -65,7 +72,10 @@ sequenceDiagram
 
 1. Policy registry resolve versioned calendar config cho run scope.
 2. Calendar service tính aware local instants rồi convert UTC boundaries.
-3. Orchestrator query/classify rows và persist applied policy + late flags.
+3. Repository đọc late provider rows từ các run hoàn tất trước đó theo scope và
+   UTC boundaries của kỳ đích.
+4. Orchestrator gộp carry-over với file hiện tại, matching và persist lineage
+   cùng applied policy + late flags.
 
 ### Components
 
@@ -75,6 +85,7 @@ sequenceDiagram
 | Provider/tenant policy registry | New; source of truth `[TBD]`. |
 | `SystemTransactionSource` | Change input từ `business_date` sang resolved period. |
 | `ReconciliationCommand` / persistence | Add applied timezone/cutoff/lateness/version. |
+| `ReconRepository` | Đọc late provider rows của run hoàn tất để carry-over sang kỳ chứa timestamp. |
 
 ## 4. API & Data
 
@@ -115,6 +126,8 @@ sequenceDiagram
 | DST transition | Period được tính từ timezone-aware local instants. |
 | Lateness boundary | Rows ngay trước/tại/sau boundary được phân loại rõ ràng. |
 | Retry after config change | Vẫn dùng policy snapshot/version của run. |
+| Late row thuộc kỳ kế tiếp | Được đọc từ `provider_txn`, gộp và matching trong run kế tiếp. |
+| File kỳ mới gửi lại late row | Chỉ một provider row tham gia matching; ưu tiên dòng file mới. |
 
 ## 7. Open Questions
 
@@ -123,7 +136,7 @@ sequenceDiagram
 | Cutoff/lateness rule của từng provider/tenant là gì? | Finance/Operations | `[Need Confirm]` |
 | Boundary là inclusive hay exclusive? | Finance | `[Need Confirm]` |
 | Có business holiday calendar hay chỉ calendar day? | Operations | `[Need Confirm]` |
-| Late row được đưa vào run hiện tại, run kế tiếp hay report riêng? | Product/Finance | `[Need Confirm]` |
+| Late row được đưa vào run hiện tại, run kế tiếp hay report riêng? | Product/Finance | `Assumption implemented: kỳ chứa transaction_time` |
 
 ## 8. Câu hỏi cần xác nhận trước khi triển khai cutoff/allowed lateness
 
@@ -136,4 +149,3 @@ quy ước tạm ở mục 2; các rule production và allowed lateness vẫn c�
 | Cutoff so sánh với timestamp nào: thời điểm tạo payment, provider ghi nhận hay thời điểm dữ liệu đến hệ thống? | Technical Lead / Provider team | `[Need Confirm]` |
 | `allowed_lateness` dùng để chờ trước khi chốt, nhận bổ sung vào kỳ cũ hay xác định chuyển sang kỳ sau? Mốc bắt đầu tính là gì? | Technical Lead / Finance | `[Need Confirm]` |
 | Payment có event time trước cutoff nhưng đến sau cutoff, còn trong allowed lateness, được đưa vào kỳ nào? | Finance / Provider team | `[Need Confirm]` |
-Technical Lead / Finance | `[Need Confirm]` |

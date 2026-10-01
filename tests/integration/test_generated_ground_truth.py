@@ -168,7 +168,7 @@ def test_all_generated_reconciliation_results_match_ground_truth() -> None:
                 tenant_id=tenant_id,
                 provider=provider,
                 business_timezone=_timezone(region, tenant_id),
-                cutoff_time=time.max,
+                cutoff_time=time(2),
             )
 
             assert output.system_rows == expected["system_rows"], filename

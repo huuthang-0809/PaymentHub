@@ -118,6 +118,7 @@ sequenceDiagram
 | GET | `/reconciliation-runs/{run_id}/results` | Filtered/paginated detailed results. |
 | GET | `/reconciliation-runs/{run_id}/report` | Xuất/tải CSV, XLSX hoặc Parquet. |
 | GET | `/reconciliation-runs/{run_id}/report?format=parquet` | Export Parquet có data dictionary. |
+| DELETE | `/reconciliation-runs/{run_id}` | Xóa run đã hoàn tất hoặc thất bại cùng provider rows, results và job log; run đang chạy trả `409`. |
 | GET | `/reconciliation-runs/{run_id}/validation-issues` | Optional validation report endpoint `[Need Confirm]`. |
 
 ### Request/Response

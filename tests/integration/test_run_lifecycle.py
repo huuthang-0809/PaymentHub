@@ -9,11 +9,13 @@ from uuid import uuid4
 import psycopg
 import pytest
 
+from canonical.domain import CanonicalTransaction
 from reconciliation.adapters import CsvFixtureParser, PostgreReconRepository
 from reconciliation.application import RunMatching, RunInProgress
+from reconciliation.application.ports import RunNotFound
 from reconciliation.application.summary import build_financial_summary
 from reconciliation.domain import ProviderTransaction, ReconResult, ReconResultType
-from shared_kernel import CanonicalStatus, Region, TxnType
+from shared_kernel import AmountStatus, CanonicalStatus, Region, TxnType
 
 
 pytestmark = pytest.mark.skipif(
@@ -33,6 +35,14 @@ class EmptySource:
     def get_transactions(self, *args):
         self.calls += 1
         return ()
+
+
+class StaticSource:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def get_transactions(self, *args):
+        return self.rows
 
 
 def test_financial_summary_survives_postgres_replay() -> None:
@@ -228,3 +238,104 @@ def test_query_reads_committed_snapshot_and_filters_runs():
         assert query.snapshot(uuid4()) is None
         runs = query.runs(provider=provider, status='COMPLETED')
         assert [run['run_id'] for run in runs] == [claim.run_id]
+
+
+def test_delete_completed_run_cascades_evidence_and_job_log():
+    from reconciliation.adapters.query import PostgreReconRunDeleter
+
+    provider = f"TEST{uuid4().hex[:12].upper()}"
+    with psycopg.connect(os.environ['F06_TEST_DATABASE_URL']) as connection:
+        repo = PostgreReconRepository(connection)
+        with _claim(repo, provider) as claim:
+            with pytest.raises(RunInProgress, match='cannot be deleted'):
+                PostgreReconRunDeleter(connection)(claim.run_id)
+            transaction = ProviderTransaction(
+                provider=provider, region=Region.VN, tenant_id=None,
+                provider_txn_id='delete-provider', provider_ref_id=None,
+                merchant_ref=None, merchant_id=None, amount_minor=1,
+                currency='VND', status='SUCCESS', txn_type=TxnType.PAYMENT,
+                transaction_time=datetime(2026, 9, 22, tzinfo=timezone.utc),
+                source_file='f06.csv', source_row_number=2,
+            )
+            result = ReconResult(
+                run_id=str(claim.run_id),
+                result_type=ReconResultType.MISSING_IN_SYSTEM,
+                region=Region.VN, tenant_id=None, provider=provider,
+                provider_txn_id='delete-provider', provider_amount_minor=1,
+                provider_currency='VND', source_file='f06.csv',
+                source_row_number=2,
+            )
+            repo.complete_run(
+                claim=claim, system_rows=0, provider_rows=1,
+                provider_txns=[transaction], results=[result],
+            )
+        run_id, job_run_id = claim.run_id, claim.job_run_id
+
+        PostgreReconRunDeleter(connection)(run_id)
+
+        assert connection.execute(
+            'SELECT count(*) FROM recon_run WHERE run_id = %s', (run_id,),
+        ).fetchone()[0] == 0
+        assert connection.execute(
+            'SELECT count(*) FROM provider_txn WHERE run_id = %s', (run_id,),
+        ).fetchone()[0] == 0
+        assert connection.execute(
+            'SELECT count(*) FROM recon_result WHERE run_id = %s', (run_id,),
+        ).fetchone()[0] == 0
+        assert connection.execute(
+            'SELECT count(*) FROM job_run_log WHERE job_run_id = %s', (job_run_id,),
+        ).fetchone()[0] == 0
+
+        with pytest.raises(RunNotFound, match='Run not found'):
+            PostgreReconRunDeleter(connection)(run_id)
+
+
+def test_late_provider_row_is_matched_in_the_next_business_period():
+    provider = f"TEST{uuid4().hex[:12].upper()}"
+    late_statement = (
+        STATEMENT.replace(b"ONEPAY", provider.encode())
+        .replace(b"2026-09-22T01:00:00", b"2026-09-22T03:00:00")
+    )
+    header_only = STATEMENT.splitlines(keepends=True)[0]
+
+    with psycopg.connect(os.environ["F06_TEST_DATABASE_URL"]) as connection:
+        repository = PostgreReconRepository(connection)
+        first = RunMatching(EmptySource(), CsvFixtureParser(), repository).execute(
+            statement=Path("provider-20260922.csv"),
+            statement_content=late_statement,
+            business_date=date(2026, 9, 22), region=Region.VN,
+            tenant_id=None, provider=provider,
+            business_timezone="UTC", cutoff_time=time(2),
+        )
+        assert first.provider_rows == 0
+        assert connection.execute(
+            "SELECT late_arriving FROM provider_txn WHERE run_id = %s",
+            (first.run_id,),
+        ).fetchone() == (True,)
+
+        system_row = CanonicalTransaction(
+            region=Region.VN, tenant_id=None, txn_id="late-system-001",
+            txn_type=TxnType.PAYMENT, provider=provider,
+            status=CanonicalStatus.SUCCESS, amount_status=AmountStatus.OK,
+            created_at=datetime(2026, 9, 22, 3, tzinfo=timezone.utc),
+            is_terminal=True, is_money_movement=True, is_reconcilable=True,
+            provider_txn_id="onepay-f06-001", merchant_id="merchant-001",
+            amount_minor=149000, currency="VND",
+        )
+        second = RunMatching(
+            StaticSource((system_row,)), CsvFixtureParser(), repository,
+        ).execute(
+            statement=Path("provider-20260923.csv"),
+            statement_content=header_only,
+            business_date=date(2026, 9, 23), region=Region.VN,
+            tenant_id=None, provider=provider,
+            business_timezone="UTC", cutoff_time=time(2),
+        )
+
+        assert second.provider_rows == 1
+        assert second.summary == {"MATCHED": 1}
+        assert second.results[0].source_file == "provider-20260922.csv"
+        assert connection.execute(
+            "SELECT count(*) FROM provider_txn WHERE run_id = %s",
+            (second.run_id,),
+        ).fetchone()[0] == 1

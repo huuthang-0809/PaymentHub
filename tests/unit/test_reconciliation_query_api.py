@@ -15,7 +15,9 @@ import pyarrow.parquet as pq
 from reconciliation.adapters.http import router
 from reconciliation.application.query import QueryReconciliation, encode_cursor, result_dict
 from reconciliation.adapters.report import export_report
-from reconciliation.application.ports import StoredRun
+from reconciliation.application.ports import (
+    QueryUnavailable, RunInProgress, RunNotFound, StoredRun,
+)
 from reconciliation.domain import ReconResult, ReconResultType
 from shared_kernel import Region, TxnType, CanonicalStatus
 
@@ -67,6 +69,7 @@ def setup_api():
 
 
     app.state.query_reconciliation = QueryReconciliation(Reader(), export_report)
+    app.state.delete_reconciliation_run = lambda run_id: None
     return TestClient(app), run_id, metadata
 
 
@@ -147,7 +150,6 @@ def test_exports_preserve_money_and_audit_evidence(setup_api, tmp_path):
 
 
 def test_query_failure_returns_stable_error(setup_api):
-    from reconciliation.application.ports import QueryUnavailable
     client, run_id, _ = setup_api
 
     def unavailable(*args, **kwargs):
@@ -157,6 +159,31 @@ def test_query_failure_returns_stable_error(setup_api):
     response = client.get(f'/reconciliation-runs/{run_id}/summary')
     assert response.status_code == 503
     assert response.json() == {'detail': 'QUERY_UNAVAILABLE'}
+
+
+def test_delete_run_returns_no_content_and_maps_errors(setup_api):
+    client, run_id, _ = setup_api
+    deleted = []
+    client.app.state.delete_reconciliation_run = lambda run_id: deleted.append(run_id)
+
+    response = client.delete(f'/reconciliation-runs/{run_id}')
+
+    assert response.status_code == 204
+    assert response.content == b''
+    assert deleted == [run_id]
+
+    for error, expected_status in [
+        (RunNotFound('Run not found'), 404),
+        (RunInProgress('Running reconciliation cannot be deleted'), 409),
+        (QueryUnavailable('QUERY_UNAVAILABLE'), 503),
+    ]:
+        def fail(run_id, error=error):
+            raise error
+
+        client.app.state.delete_reconciliation_run = fail
+        assert client.delete(
+            f'/reconciliation-runs/{run_id}'
+        ).status_code == expected_status
 
 
 def test_empty_exports_have_headers_and_schema():

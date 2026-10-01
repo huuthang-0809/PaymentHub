@@ -11,7 +11,8 @@ from canonical.domain import CanonicalTransaction
 from reconciliation.adapters import CsvFixtureParser
 from reconciliation.application import InvalidProviderStatement, RunMatching
 from reconciliation.application.ports import RunClaim, StoredRun
-from shared_kernel import Region
+from reconciliation.domain import ProviderTransaction
+from shared_kernel import Region, TxnType
 from shared_kernel.enums import Instrument
 
 
@@ -24,6 +25,8 @@ CSV_WITH_NEXT_PERIOD_ROW = CSV_STATEMENT + (
     b"2026-09-22T02:00:00+00:00\n"
 )
 
+CSV_HEADER = CSV_STATEMENT.splitlines(keepends=True)[0]
+
 
 class RecordingRepository:
     def __init__(self) -> None:
@@ -32,6 +35,8 @@ class RecordingRepository:
         self.existing: StoredRun | None = None
         self.failed: Exception | None = None
         self.claimed: dict[str, Any] | None = None
+        self.late_rows: tuple[ProviderTransaction, ...] = ()
+        self.late_request: dict[str, Any] | None = None
 
     @contextmanager
     def claim_run(self, **values: Any):
@@ -40,6 +45,10 @@ class RecordingRepository:
 
     def complete_run(self, **values: Any) -> None:
         self.saved = values
+
+    def late_provider_transactions(self, **values: Any):
+        self.late_request = values
+        return self.late_rows
 
     def fail_run(self, claim: RunClaim, error: Exception) -> None:
         self.failed = error
@@ -141,6 +150,7 @@ def test_pipeline_accepts_adapter_output_without_loading_mongo(tmp_path: Path) -
         (item["dependency"], item["operation"], item["outcome"])
         for item in telemetry.dependencies
     } == {
+        ("repository", "late_provider_transactions", "success"),
         ("system_source", "get_transactions", "success"),
         ("repository", "complete_run", "success"),
     }
@@ -207,6 +217,80 @@ def test_row_at_cutoff_is_persisted_but_not_matched_in_current_run(
     assert len(persisted) == 2
     assert persisted[0].late_arriving is False
     assert persisted[1].late_arriving is True
+
+
+def test_late_row_is_carried_into_its_business_period(tmp_path: Path) -> None:
+    repository = RecordingRepository()
+    repository.late_rows = (ProviderTransaction(
+        provider="ONEPAY", region=Region.VN, tenant_id=None,
+        provider_txn_id="next-period", provider_ref_id=None,
+        merchant_ref=None, merchant_id="merchant-001", amount_minor=100,
+        currency="VND", status="SUCCESS", txn_type=TxnType.PAYMENT,
+        transaction_time=datetime(2026, 9, 22, 2, tzinfo=UTC),
+        source_file="onepay-20260922.csv", source_row_number=3,
+        late_arriving=True,
+    ),)
+    source = StaticSystemTransactionSource((vn_to_canonical(
+        {
+            "_id": "system-next-period",
+            "CreatedOn": "2026-09-22T02:00:00+00:00",
+            "PaymentMethod": "CARD", "Status": 1, "Amount": "100",
+            "PaymentTransactionId": "next-period",
+            "MerchantId": "merchant-001",
+        },
+        VNMapping(instrument_by_method={"CARD": Instrument.CARD}),
+    ),))
+
+    output = RunMatching(source, CsvFixtureParser(), repository).execute(
+        statement=tmp_path / "onepay-20260923.csv",
+        statement_content=CSV_HEADER,
+        business_date=date(2026, 9, 23), region=Region.VN,
+        tenant_id=None, provider="ONEPAY", business_timezone="UTC",
+        cutoff_time=time(2), run_id=UUID(int=1),
+    )
+
+    assert output.provider_rows == 1
+    assert output.summary == {"MATCHED": 1}
+    assert repository.late_request == {
+        "business_date": date(2026, 9, 23),
+        "region": Region.VN,
+        "tenant_id": None,
+        "provider": "ONEPAY",
+        "start_utc": datetime(2026, 9, 22, 2, tzinfo=UTC),
+        "end_utc": datetime(2026, 9, 23, 2, tzinfo=UTC),
+    }
+    assert repository.saved is not None
+    assert repository.saved["provider_txns"] == list(repository.late_rows)
+
+
+def test_current_file_wins_when_it_repeats_a_carried_row(tmp_path: Path) -> None:
+    repository = RecordingRepository()
+    repository.late_rows = (ProviderTransaction(
+        provider="ONEPAY", region=Region.VN, tenant_id=None,
+        provider_txn_id="onepay-payment-001", provider_ref_id=None,
+        merchant_ref="system-001", merchant_id="merchant-001",
+        amount_minor=149000, currency="VND", status="SUCCESS",
+        txn_type=TxnType.PAYMENT,
+        transaction_time=datetime(2026, 9, 22, 1, tzinfo=UTC),
+        source_file="old.csv", source_row_number=2, late_arriving=True,
+    ),)
+
+    output = RunMatching(
+        StaticSystemTransactionSource((_adapter_transaction(),)),
+        CsvFixtureParser(), repository,
+    ).execute(
+        statement=tmp_path / "new.csv", statement_content=CSV_STATEMENT,
+        business_date=date(2026, 9, 22), region=Region.VN,
+        tenant_id=None, provider="ONEPAY", business_timezone="UTC",
+        cutoff_time=time(2), run_id=UUID(int=1),
+    )
+
+    assert output.provider_rows == 1
+    assert output.summary == {"MATCHED": 1}
+    assert repository.saved is not None
+    assert [row.source_file for row in repository.saved["provider_txns"]] == [
+        "new.csv"
+    ]
 
 
 def test_validation_failure_is_recorded_after_claim(tmp_path: Path) -> None:
