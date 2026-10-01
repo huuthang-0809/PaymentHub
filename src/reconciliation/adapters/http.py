@@ -107,7 +107,7 @@ def list_reconciliation_runs(
     cursor: str | None = None,
     sort: Literal['run_id'] = 'run_id',
 ):
-    return jsonable_encoder(_query(
+    return jsonable_encoder(_query( #jsonable_encoder help transform dict -> json
         request.app.state.query_reconciliation.runs,
         region=region, tenant_id=tenant_id, provider=provider,
         business_date=business_date, status=status, limit=limit, cursor=cursor, sort=sort,

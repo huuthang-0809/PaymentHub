@@ -68,7 +68,7 @@ async def lifespan(app: FastAPI):
         conninfo=_database_url(),
         min_size=1,
         max_size=int(os.getenv("DATABASE_POOL_SIZE", "5")),
-        open=True,
+        open=True, #open connection instantly
     )
 
     sources = {

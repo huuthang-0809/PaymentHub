@@ -91,7 +91,7 @@ class QueryReconciliation:
             after = decode_cursor(cursor, scope)
             if after is not None and (
                 len(after) != 20 or not after.isascii() or not after.isdigit()
-                or not 1 <= int(after) <= 2_147_483_647
+                or not 1 <= int(after) <= 2_147_483_647 #max value of Postgresql integer
             ):
                 raise ValueError('Invalid cursor for this query')
         except ValueError as error:
