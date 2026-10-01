@@ -120,7 +120,7 @@ def test_parent_rate_uses_status_or_counter_once_per_parent_not_child_count():
     assert metrics.missing_evidence_count == 0
 
 
-def test_zero_denominator_and_legacy_missing_evidence_return_null_rate():
+def test_zero_denominator_and_legacy_missing_evidence_return_null_rate(): #week 3 test
     assert build_financial_summary([]).refund_parent_metrics.refunded_transaction_rate is None
     metrics = build_financial_summary([
         payment(system_status=None, refunded_amount_minor=None),

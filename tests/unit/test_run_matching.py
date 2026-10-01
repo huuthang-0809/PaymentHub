@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import UTC, date, datetime, time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -18,6 +18,11 @@ from shared_kernel.enums import Instrument
 CSV_STATEMENT = b"""provider,region,tenant_id,provider_txn_id,provider_ref_id,merchant_ref,merchant_id,amount_minor,currency,status,txn_type,transaction_time
 ONEPAY,VN,,onepay-payment-001,,system-001,merchant-001,149000,VND,SUCCESS,PAYMENT,2026-09-22T01:00:00+00:00
 """
+
+CSV_WITH_NEXT_PERIOD_ROW = CSV_STATEMENT + (
+    b"ONEPAY,VN,,next-period,,,merchant-001,100,VND,SUCCESS,PAYMENT,"
+    b"2026-09-22T02:00:00+00:00\n"
+)
 
 
 class RecordingRepository:
@@ -43,16 +48,17 @@ class RecordingRepository:
 class StaticSystemTransactionSource:
     def __init__(self, rows: tuple[CanonicalTransaction, ...]) -> None:
         self.rows = rows
-        self.request: tuple[Region, str | None, str, date] | None = None
+        self.request: tuple[Region, str | None, str, datetime, datetime] | None = None
 
     def get_transactions(
         self,
         region: Region,
         tenant_id: str | None,
         provider: str,
-        business_date: date,
+        start_utc: datetime,
+        end_utc: datetime,
     ) -> tuple[CanonicalTransaction, ...]:
-        self.request = (region, tenant_id, provider, business_date)
+        self.request = (region, tenant_id, provider, start_utc, end_utc)
         return self.rows
 
 
@@ -106,6 +112,8 @@ def test_pipeline_accepts_adapter_output_without_loading_mongo(tmp_path: Path) -
         region=Region.VN,
         tenant_id=None,
         provider="onepay",
+        business_timezone="UTC",
+        cutoff_time=time(2),
         run_id=run_id,
     )
 
@@ -118,7 +126,11 @@ def test_pipeline_accepts_adapter_output_without_loading_mongo(tmp_path: Path) -
     assert totals.system_amount_minor == totals.provider_amount_minor == 149000
     assert totals.delta_amount_minor == 0
     assert output.financial_summary.refund_parent_metrics.refunded_transaction_rate == "0.000000"
-    assert source.request == (Region.VN, None, "ONEPAY", date(2026, 9, 22))
+    assert source.request == (
+        Region.VN, None, "ONEPAY",
+        datetime(2026, 9, 21, 2, tzinfo=UTC),
+        datetime(2026, 9, 22, 2, tzinfo=UTC),
+    )
     assert repository.saved is not None
     assert repository.claimed is not None
     assert repository.claimed["provider"] == "ONEPAY"
@@ -138,7 +150,8 @@ def test_pipeline_accepts_adapter_output_without_loading_mongo(tmp_path: Path) -
     replay = RunMatching(source, CsvFixtureParser(), repository).execute(
         statement=statement, statement_content=b"skip parser on replay",
         business_date=date(2026, 9, 22), region=Region.VN,
-        tenant_id=None, provider="onepay", run_id=run_id,
+        tenant_id=None, provider="onepay", business_timezone="UTC",
+        cutoff_time=time(2), run_id=run_id,
     )
     assert replay.replayed is True
     assert replay.financial_summary == output.financial_summary
@@ -153,7 +166,8 @@ def test_completed_replay_skips_parser_source_and_matching(tmp_path: Path) -> No
     output = RunMatching(source, CsvFixtureParser(), repository).execute(
         statement=tmp_path / "old.csv", statement_content=b"not even valid CSV",
         business_date=date(2026, 9, 22), region=Region.VN,
-        tenant_id=None, provider="onepay", run_id=run_id,
+        tenant_id=None, provider="onepay", business_timezone="UTC",
+        cutoff_time=time(2), run_id=run_id,
     )
 
     assert output.run_id == run_id
@@ -164,6 +178,37 @@ def test_completed_replay_skips_parser_source_and_matching(tmp_path: Path) -> No
     assert repository.saved is None
 
 
+def test_row_at_cutoff_is_persisted_but_not_matched_in_current_run(
+    tmp_path: Path,
+) -> None:
+    repository = RecordingRepository()
+    run_id = UUID("00000000-0000-0000-0000-000000000001")
+
+    output = RunMatching(
+        StaticSystemTransactionSource((_adapter_transaction(),)),
+        CsvFixtureParser(),
+        repository,
+    ).execute(
+        statement=tmp_path / "onepay.csv",
+        statement_content=CSV_WITH_NEXT_PERIOD_ROW,
+        business_date=date(2026, 9, 22),
+        region=Region.VN,
+        tenant_id=None,
+        provider="ONEPAY",
+        business_timezone="UTC",
+        cutoff_time=time(2),
+        run_id=run_id,
+    )
+
+    assert output.provider_rows == 1
+    assert output.summary == {"MATCHED": 1}
+    assert repository.saved is not None
+    persisted = repository.saved["provider_txns"]
+    assert len(persisted) == 2
+    assert persisted[0].late_arriving is False
+    assert persisted[1].late_arriving is True
+
+
 def test_validation_failure_is_recorded_after_claim(tmp_path: Path) -> None:
     repository = RecordingRepository()
     run_id = UUID("00000000-0000-0000-0000-000000000001")
@@ -171,6 +216,7 @@ def test_validation_failure_is_recorded_after_claim(tmp_path: Path) -> None:
         RunMatching(StaticSystemTransactionSource(()), CsvFixtureParser(), repository).execute(
             statement=tmp_path / "bad.csv", statement_content=b"bad csv",
             business_date=date(2026, 9, 22), region=Region.VN,
-            tenant_id=None, provider="ONEPAY", run_id=run_id,
+            tenant_id=None, provider="ONEPAY", business_timezone="UTC",
+            cutoff_time=time(2), run_id=run_id,
         )
     assert isinstance(repository.failed, InvalidProviderStatement)

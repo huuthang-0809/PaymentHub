@@ -56,7 +56,9 @@ def test_all_tenants_are_read_and_kept_distinct() -> None:
 def test_query_uses_half_open_utc_business_day() -> None:
     source, indonesia, _ = source_fixture()
     source.get_transactions(
-        Region.ASIA, "asia-id", " espay ", date(2026, 9, 21)
+        Region.ASIA, "asia-id", " espay ",
+        datetime(2026, 9, 21, tzinfo=UTC),
+        datetime(2026, 9, 22, tzinfo=UTC),
     )
 
     assert indonesia.last_query == {
@@ -70,7 +72,9 @@ def test_query_uses_half_open_utc_business_day() -> None:
 def test_provider_outside_the_tenant_scope_returns_no_rows() -> None:
     source, _, _ = source_fixture()
     rows = source.get_transactions(
-        Region.ASIA, "asia-id", "2C2P", date(2026, 9, 21)
+        Region.ASIA, "asia-id", "2C2P",
+        datetime(2026, 9, 21, tzinfo=UTC),
+        datetime(2026, 9, 22, tzinfo=UTC),
     )
     assert rows == ()
 
@@ -84,7 +88,11 @@ def test_source_rejects_an_invalid_scope(
 ) -> None:
     source, _, _ = source_fixture()
     with pytest.raises(ValueError, match="configured Asia tenant"):
-        source.get_transactions(region, tenant_id, "ESPAY", date(2026, 9, 21))
+        source.get_transactions(
+            region, tenant_id, "ESPAY",
+            datetime(2026, 9, 21, tzinfo=UTC),
+            datetime(2026, 9, 22, tzinfo=UTC),
+        )
 
 
 def test_source_rejects_tenant_without_complete_mapping() -> None:

@@ -211,7 +211,7 @@ Không có mapping tương ứng → UNKNOWN.
 
 [CsvFixtureParser](../src/reconciliation/adapters/csv_fixture.py) nhận CSV nội bộ UTF-8 (có thể có BOM), phân cách dấu phẩy. Các header bắt buộc: `provider`, `region`, `tenant_id`, `provider_txn_id`, `provider_ref_id`, `merchant_ref`, `merchant_id`, `amount_minor`, `currency`, `status`, `txn_type`, `transaction_time`.
 
-Header bắt buộc không có nghĩa mọi ô đều bắt buộc: các ID tùy chọn được đổi chuỗi rỗng thành null; tenant bắt buộc với ASIA. `status` provider phải có giá trị nhưng chưa kiểm tra theo enum trạng thái provider. `transaction_time` phải có timezone. RunMatching kiểm tra tất cả dòng cùng region/tenant/provider của request; hiện chưa từ chối dòng provider nằm ngoài business_date.
+Header bắt buộc không có nghĩa mọi ô đều bắt buộc: các ID tùy chọn được đổi chuỗi rỗng thành null; tenant bắt buộc với ASIA. `status` provider phải có giá trị nhưng chưa kiểm tra theo enum trạng thái provider. `transaction_time` phải có timezone. RunMatching kiểm tra tất cả dòng cùng region/tenant/provider của request; dòng ngoài kỳ vẫn được lưu nhưng không tham gia matching; chỉ dòng tại hoặc sau cutoff có `late_arriving=true`.
 
 | ValidationCode | Điều kiện |
 |---|---|
@@ -407,7 +407,7 @@ Schema chỉ dùng kiểu dựng sẵn của PostgreSQL. Mã có miền đóng d
 |---|---|---|---|
 | `job_run_id` | `uuid` | Không; `PRIMARY KEY` | UUID job thực thi; recon_run tham chiếu job_run_log. |
 | `job_name` | `varchar(64)` | Không; `NOT NULL` | Tên job; repository ghi reconciliation. |
-| `business_date` | `date` | Không; `NOT NULL` | Ngày nghiệp vụ được request chọn; nguồn Mongo lọc ngày địa phương theo cấu hình scope. |
+| `business_date` | `date` | Không; `NOT NULL` | Ngày kết thúc kỳ nghiệp vụ tạm thời; nguồn Mongo lọc theo khoảng UTC được resolve từ timezone/cutoff. |
 | `region` | `varchar(5)` | Có; `CHECK nếu có` | Khu vực nguồn; VN, ASIA hoặc INDIA. |
 | `tenant_id` | `text` | Có; `không default` | Tenant nguồn; bắt buộc với ASIA, cấu hình hiện có asia-id/asia-ph; VN/INDIA dùng null. |
 | `provider` | `varchar(64)` | Có; `không default` | Mã provider chuẩn hóa trim/uppercase; ONEPAY, ESPAY, 2C2P, RAZORPAY theo cấu hình hiện tại. |
@@ -424,14 +424,14 @@ Schema chỉ dùng kiểu dựng sẵn của PostgreSQL. Mã có miền đóng d
 |---|---|---|---|
 | `run_id` | `uuid` | Không; `PRIMARY KEY` | ID run đối soát; UUID ở persistence/API, chuỗi trong domain result. |
 | `job_run_id` | `uuid` | Không; `NOT NULL REFERENCES job_run_log(job_run_id)` | UUID job thực thi; recon_run tham chiếu job_run_log. |
-| `business_date` | `date` | Không; `NOT NULL` | Ngày nghiệp vụ được request chọn; nguồn Mongo lọc ngày địa phương theo cấu hình scope. |
+| `business_date` | `date` | Không; `NOT NULL` | Ngày kết thúc kỳ nghiệp vụ tạm thời; nguồn Mongo lọc theo khoảng UTC được resolve từ timezone/cutoff. |
 | `region` | `varchar(5)` | Không; `NOT NULL; CHECK` | Khu vực nguồn; VN, ASIA hoặc INDIA. |
 | `tenant_id` | `text` | Có; `không default` | Tenant nguồn; bắt buộc với ASIA, cấu hình hiện có asia-id/asia-ph; VN/INDIA dùng null. |
 | `provider` | `varchar(64)` | Không; `NOT NULL` | Mã provider chuẩn hóa trim/uppercase; ONEPAY, ESPAY, 2C2P, RAZORPAY theo cấu hình hiện tại. |
 | `source_file` | `text` | Không; `NOT NULL` | Tên file sao kê nguồn; HTTP lấy basename của tên upload. |
 | `file_checksum` | `varchar(64)` | Không; `NOT NULL; CHECK` | SHA-256 dạng 64 ký tự hex viết thường của byte sao kê nguyên bản. |
 | `business_timezone` | `varchar(64)` | Không; `NOT NULL` | Tên timezone IANA được lưu cùng run. |
-| `cutoff_time` | `time` | Không; `NOT NULL` | Cột cutoff, repository hiện ghi 00:00; chưa triển khai lịch cutoff nghiệp vụ. |
+| `cutoff_time` | `time` | Không; `NOT NULL` | Cutoff nhận từ input và được snapshot cùng run. Kỳ D tạm dùng `[(D-1) cutoff, D cutoff)`. |
 | `allowed_lateness_seconds` | `integer` | Không; `NOT NULL DEFAULT 0` | Số giây cho phép muộn, >= 0, default 0; chưa áp dụng chính sách trong pipeline. |
 | `status` | `varchar(9)` | Không; `NOT NULL DEFAULT 'PENDING'; CHECK` | PENDING/RUNNING/COMPLETED/FAILED; repository tạo run với RUNNING rồi chuyển COMPLETED hoặc FAILED. |
 | `started_at` | `timestamptz` | Không; `NOT NULL DEFAULT now()` | Thời điểm bắt đầu attempt, default now(). |
@@ -488,7 +488,7 @@ Schema chỉ dùng kiểu dựng sẵn của PostgreSQL. Mã có miền đóng d
 | `currency` | `varchar(3)` | Không; `NOT NULL; CHECK` | Mã tiền trong danh sách Money hỗ trợ ở bảng exponent. |
 | `status` | `varchar(64)` | Không; `NOT NULL` | Trạng thái nguồn provider, không dùng enum canonical. |
 | `transaction_time` | `timestamptz` | Không; `NOT NULL` | Thời điểm giao dịch provider; ISO timezone-aware khi parse, chuẩn hóa UTC. |
-| `late_arriving` | `boolean` | Không; `NOT NULL DEFAULT false` | Cờ provider đến muộn; default false, chưa có logic phân loại hiện tại. |
+| `late_arriving` | `boolean` | Không; `NOT NULL DEFAULT false` | True khi transaction_time của provider row tại hoặc sau cutoff của run. Row ngoài kỳ vẫn được lưu để audit nhưng không tham gia matching. |
 | `source_file` | `text` | Không; `NOT NULL` | Tên file sao kê nguồn; HTTP lấy basename của tên upload. |
 | `source_row_number` | `integer` | Không; `NOT NULL` | Số bản ghi CSV tính cả header; data đầu tiên là 2. CSV nhiều dòng trong ô dùng thứ tự record, không phải dòng vật lý. |
 | `raw` | `jsonb` | Không; `NOT NULL DEFAULT '{}'::jsonb` | Payload nguồn phục vụ lưu/truy vết; không trả qua API query hoặc export kết quả. |
@@ -524,7 +524,7 @@ Schema chỉ dùng kiểu dựng sẵn của PostgreSQL. Mã có miền đóng d
 
 ## 13. Phần chưa hoàn thiện và quy tắc cập nhật
 
-- Chưa có lịch job/cutoff/lateness đầy đủ; không dùng các cột mặc định làm bằng chứng đã xử lý late arrival.
+- Cutoff/timezone cho provider rows đã có quy ước tạm. Allowed lateness, system late evidence và tự động đưa staged row vào run kế tiếp chưa triển khai.
 - Chưa có pipeline ingest ghi canonical_event/partition con trong luồng đối soát này; benchmark ingest và rule cảnh báo vắng file cần triển khai riêng.
 - Parser hiện là CSV fixture nội bộ; chưa khẳng định hỗ trợ định dạng sao kê production của từng provider.
 - Mapping provider/currency/instrument và flag nguồn dựa vào cấu hình hiện có. Thêm tenant, currency hoặc trạng thái cần cập nhật mapping, Dictionary và kiểm thử tương ứng.

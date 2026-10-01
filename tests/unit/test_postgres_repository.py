@@ -90,9 +90,11 @@ def test_claim_persists_checksum_timezone_scope_and_complete_lineage() -> None:
         provider="ESPAY",
         statement=Path("espay.csv"),
         statement_content=STATEMENT_CONTENT,
+        business_timezone="Asia/Jakarta",
+        cutoff_time=time(2),
     ) as claim:
         repository.complete_run(
-            claim=claim, system_rows=1,
+            claim=claim, system_rows=1, provider_rows=1,
             provider_txns=[_provider_transaction()], results=[_result()],
         )
 
@@ -114,11 +116,11 @@ def test_claim_persists_checksum_timezone_scope_and_complete_lineage() -> None:
         "espay.csv",
         hashlib.sha256(STATEMENT_CONTENT).hexdigest(),
         "Asia/Jakarta",
-        time.min,
+        time(2),
     )
     assert provider_values[:3] == (date(2026, 9, 22), RUN_ID, job_run_id)
     assert provider_values[4] == "asia-id"
-    assert provider_values[17].obj == {
+    assert provider_values[18].obj == {
         "account": "masked",
         "provider_status": "00",
     }
@@ -152,7 +154,7 @@ def test_complete_run_rolls_back_detail_failure() -> None:
                 UUID("00000000-0000-0000-0000-000000000002"),
                 business_date=date(2026, 9, 22),
             ),
-            system_rows=1,
+            system_rows=1, provider_rows=1,
             provider_txns=[_provider_transaction()],
             results=[_result()],
         )
@@ -167,3 +169,22 @@ def test_repository_rejects_unknown_business_timezone() -> None:
 
     with pytest.raises(ValueError, match="Unknown business timezone"):
         PostgreReconRepository(connection, business_timezone="Not/AZone")
+
+
+@pytest.mark.parametrize("status", ["COMPLETED", "FAILED"])
+def test_rerun_rejects_changed_cutoff_without_changing_identity(status) -> None:
+    connection, _, cursor = _connection()
+    cursor.fetchone.side_effect = [
+        (True,),
+        (RUN_ID, UUID(int=2), status, "ASIA", "asia-id", "Asia/Jakarta", time(2)),
+    ]
+    repository = PostgreReconRepository(connection)
+    with pytest.raises(ValueError, match="different timezone or cutoff"):
+        with repository.claim_run(
+            business_date=date(2026, 9, 22), region=Region.ASIA,
+            tenant_id="asia-id", provider="ESPAY", statement=Path("espay.csv"),
+            statement_content=STATEMENT_CONTENT,
+            business_timezone="Asia/Jakarta", cutoff_time=time(3),
+        ):
+            pytest.fail("Changed policy must not replay or retry the existing run")
+    assert not cursor.executemany.called

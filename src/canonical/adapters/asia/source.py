@@ -40,21 +40,19 @@ class MongoAsiaSource:
         region: Region,
         tenant_id: str | None,
         provider: str,
-        business_date: date,
+        start_utc: datetime,
+        end_utc: datetime,
     ) -> tuple[CanonicalTransaction, ...]:
         if region != Region.ASIA or tenant_id not in self.tenant_databases:
             raise ValueError("configured Asia tenant is required")
         expected_provider = self.mapping.tenant_providers[tenant_id]
         if provider.strip().upper() != expected_provider.strip().upper():
             return ()
-        business_timezone = self.business_timezones.get(tenant_id, UTC)
-        start = datetime.combine(business_date, time.min, tzinfo=business_timezone)
-        end = start + timedelta(days=1)
         cursor = self.client[self.tenant_databases[tenant_id]][self.collection].find(
             {
                 "CreatedAt": {
-                    "$gte": start.astimezone(UTC),
-                    "$lt": end.astimezone(UTC),
+                    "$gte": start_utc,
+                    "$lt": end_utc,
                 }
             }
         )
@@ -65,12 +63,16 @@ class MongoAsiaSource:
     def get_all_tenants(self, business_date: date) -> tuple[CanonicalTransaction, ...]:
         rows: list[CanonicalTransaction] = []
         for tenant_id in sorted(self.tenant_databases):
+            timezone = self.business_timezones.get(tenant_id, UTC)
+            start = datetime.combine(business_date, time.min, tzinfo=timezone)
+            end = start + timedelta(days=1)
             rows.extend(
                 self.get_transactions(
                     Region.ASIA,
                     tenant_id,
                     self.mapping.tenant_providers[tenant_id],
-                    business_date,
+                    start.astimezone(UTC),
+                    end.astimezone(UTC),
                 )
             )
         return tuple(rows)

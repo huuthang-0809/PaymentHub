@@ -44,6 +44,8 @@ class PostgreReconRepository:
         provider: str,
         statement: Path,
         statement_content: bytes,
+        business_timezone: str,
+        cutoff_time: time,
         run_id: UUID | None = None,
     ) -> Iterator[RunClaim]:
         """Create hash and lock key. Insert into job_run_log and recon_run with status RUNNING"""
@@ -68,7 +70,8 @@ class PostgreReconRepository:
                     raise RunInProgress("Identical reconciliation input is running")
                 cursor.execute(
                     """
-                    SELECT r.run_id, r.job_run_id, r.status, r.region, r.tenant_id
+                    SELECT r.run_id, r.job_run_id, r.status, r.region, r.tenant_id,
+                           r.business_timezone, r.cutoff_time
                     FROM recon_run AS r
                     WHERE r.business_date = %s AND r.provider = %s
                       AND r.file_checksum = %s
@@ -97,19 +100,21 @@ class PostgreReconRepository:
                         """,
                         (resolved_run_id, job_run_id, business_date, region.value,
                          tenant_id, provider, str(statement), checksum,
-                         self.business_timezone, time.min),
+                         business_timezone, cutoff_time),
                     )
                     claim = RunClaim(
                         resolved_run_id, job_run_id, business_date=business_date,
                     )
                 else:
                     (resolved_run_id, job_run_id, current_status,
-                     stored_region, stored_tenant_id) = row
+                     stored_region, stored_tenant_id, stored_timezone, stored_cutoff) = row
                     if stored_region != region.value or stored_tenant_id != tenant_id:
                         raise ValueError(
                             "Statement checksum already belongs to a different "
                             "region or tenant for this date and provider"
                         )
+                    if (stored_timezone, stored_cutoff) != (business_timezone, cutoff_time):
+                        raise ValueError("Existing run uses a different timezone or cutoff")
                     if current_status == "COMPLETED":
                         claim = RunClaim(
                             resolved_run_id, job_run_id,
@@ -200,6 +205,7 @@ class PostgreReconRepository:
         *,
         claim: RunClaim,
         system_rows: int,
+        provider_rows: int,
         provider_txns: list[ProviderTransaction],
         results: list[ReconResult],
     ) -> None:
@@ -229,10 +235,11 @@ class PostgreReconRepository:
                     provider, txn_type,
                     provider_txn_id, provider_ref_id, merchant_ref, merchant_id,
                     amount_minor, currency, status, transaction_time,
+                    late_arriving,
                     source_file, source_row_number, raw
                 ) VALUES (
                     %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s, %s, %s, %s
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s
                 )
                 """,
                 [
@@ -252,6 +259,7 @@ class PostgreReconRepository:
                         txn.currency,
                         txn.status,
                         txn.transaction_time,
+                        txn.late_arriving,
                         txn.source_file,
                         txn.source_row_number,
                         Jsonb(txn.raw),
@@ -319,7 +327,10 @@ class PostgreReconRepository:
                 WHERE job_run_id = %s AND status = 'RUNNING'
                 """,
                 (Jsonb({"system_rows": system_rows,
-                        "provider_rows": len(provider_txns),
+                        "provider_rows": provider_rows,
+                        "late_provider_rows": sum(
+                            txn.late_arriving for txn in provider_txns
+                        ),
                         "results": len(results), "summary": dict(summary)}),
                  job_run_id),
             )
