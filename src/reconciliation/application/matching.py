@@ -6,7 +6,7 @@ from time import perf_counter
 from typing import Any, Callable
 from uuid import UUID
 
-from reconciliation.domain import MatchingEngine, ReconResult
+from reconciliation.domain import MatchingEngine, ProviderTransaction, ReconResult
 from shared_kernel import Region
 
 from .ports import (
@@ -163,8 +163,29 @@ class RunMatching:
                         "the requested region, tenant, or provider"
                     )
 
-                provider_rows, persisted_provider_rows = classify_provider_rows(
+                current_provider_rows, persisted_provider_rows = classify_provider_rows(
                     parsed_provider_rows, period
+                )
+                carried_rows = self._dependency(
+                    lambda: self.repository.late_provider_transactions(
+                        business_date=business_date,
+                        region=region,
+                        tenant_id=tenant_id,
+                        provider=provider,
+                        start_utc=period.start_utc,
+                        end_utc=period.end_utc,
+                    ),
+                    dependency="repository",
+                    operation="late_provider_transactions",
+                    region=region,
+                    tenant_id=tenant_id,
+                    provider=provider,
+                )
+                provider_rows = _merge_provider_rows(
+                    current_provider_rows, list(carried_rows)
+                )
+                persisted_provider_rows.extend(
+                    provider_rows[len(current_provider_rows):]
                 )
                 system_transactions = self._dependency(
                     lambda: self.system_source.get_transactions(
@@ -241,3 +262,48 @@ class RunMatching:
                     outcome=outcome,
                     duration_seconds=perf_counter() - started,
                 )
+
+
+def _provider_identity(transaction: ProviderTransaction) -> tuple | None:
+    provider_txn_id = transaction.provider_txn_id
+    if transaction.region is Region.ASIA and transaction.txn_type.value == "REFUND":
+        provider_txn_id = None
+    if provider_txn_id:
+        key_name, identifier = "provider_txn_id", provider_txn_id
+    elif transaction.region is Region.ASIA and transaction.provider_ref_id:
+        key_name, identifier = "provider_ref_id", transaction.provider_ref_id
+    elif transaction.merchant_ref:
+        key_name, identifier = "merchant_ref", transaction.merchant_ref
+    else:
+        return None
+    return (
+        transaction.region,
+        transaction.tenant_id,
+        transaction.provider,
+        transaction.currency,
+        key_name,
+        identifier,
+    )
+
+
+def _merge_provider_rows(
+    current_rows: list[ProviderTransaction],
+    carried_rows: list[ProviderTransaction],
+) -> list[ProviderTransaction]:
+    merged = list(current_rows)
+    origins = {(row.source_file, row.source_row_number) for row in current_rows}
+    identities = {
+        identity
+        for row in current_rows
+        if (identity := _provider_identity(row)) is not None
+    }
+    for row in carried_rows:
+        origin = (row.source_file, row.source_row_number)
+        identity = _provider_identity(row)
+        if origin in origins or (identity is not None and identity in identities):
+            continue
+        merged.append(row)
+        origins.add(origin)
+        if identity is not None:
+            identities.add(identity)
+    return merged
