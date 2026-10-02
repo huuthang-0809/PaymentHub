@@ -3,12 +3,15 @@ from fastapi import FastAPI
 from prometheus_client import make_asgi_app
 
 from bootstrap.bootstrap import lifespan
+from reconciliation.adapters.alerts import InMemoryAlertStore, router as alert_router
 from reconciliation.adapters.http import router
 
 
 def create_app() -> FastAPI:
     app = FastAPI(title="PaymentHub API", lifespan=lifespan)
+    app.state.alert_store = InMemoryAlertStore()
     app.include_router(router)
+    app.include_router(alert_router)
     app.mount("/metrics", make_asgi_app()) # 
 
     @app.get("/health")

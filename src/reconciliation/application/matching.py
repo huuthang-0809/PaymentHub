@@ -91,6 +91,7 @@ class RunMatching:
             raise
         finally:
             if self.telemetry is not None:
+                financial = output.financial_summary if output else None
                 self.telemetry.record_run(
                     region=region,
                     tenant_id=tenant_id,
@@ -100,6 +101,15 @@ class RunMatching:
                     system_rows=output.system_rows if output else None,
                     provider_rows=output.provider_rows if output else None,
                     summary=output.summary if output else None,
+                    currency_deltas=(
+                        {
+                            total.currency: total.delta_amount_minor
+                            for total in financial.totals_by_currency
+                            if total.currency is not None
+                            and total.delta_amount_minor is not None
+                        }
+                        if financial else None
+                    ),
                 )
 
     def _execute(

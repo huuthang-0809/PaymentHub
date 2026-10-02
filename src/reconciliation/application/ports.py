@@ -37,6 +37,7 @@ class ReconciliationTelemetry(Protocol):
         system_rows: int | None = None,
         provider_rows: int | None = None,
         summary: Mapping[str, int] | None = None, # classification counts
+        currency_deltas: Mapping[str, int] | None = None,
     ) -> None: ...
 
     def record_dependency( # Measure a read/write operation within a reconciliation run. Ex: measure read and standardlize process system's transactions.

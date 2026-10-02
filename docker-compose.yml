@@ -87,7 +87,10 @@ services:
       RECON_API_URL: http://api:8000
       RECON_STATEMENT_DIR: /statements
       RECON_SCHEDULER_POLL_SECONDS: ${RECON_SCHEDULER_POLL_SECONDS:-60}
+      RECON_SCHEDULER_METRICS_PORT: 9101
       RECON_SCHEDULES_JSON: ${RECON_SCHEDULES_JSON:-[]}
+    expose:
+      - "9101"
     volumes:
       - ${RECON_STATEMENT_DIR:-./tests/generated/provider-statements}:/statements:ro
     depends_on:
@@ -118,9 +121,21 @@ services:
       - "9090:9090"
     volumes:
       - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./docker/prometheus/rules:/etc/prometheus/rules:ro
       - prometheus_data:/prometheus
     depends_on:
       - api
+      - alertmanager
+
+  alertmanager:
+    image: prom/alertmanager:v0.28.1
+    container_name: paymenthub_alertmanager
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./docker/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
 
   grafana:
     image: grafana/grafana:13.1.6

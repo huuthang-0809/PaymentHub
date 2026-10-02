@@ -1,0 +1,77 @@
+rule_files:
+  - reconciliation.yml
+
+evaluation_interval: 1m
+
+tests:
+  - name: normal reconciliation emits no alerts
+    interval: 1m
+    input_series:
+      - series: 'paymenthub_reconciliation_latest_currency_delta_minor{region="VN",tenant_id="none",provider="ONEPAY",currency="VND"}'
+        values: '50000+0x3'
+      - series: 'paymenthub_provider_statement_present{region="VN",tenant_id="none",provider="ONEPAY"}'
+        values: '1+0x3'
+      - series: 'paymenthub_reconciliation_latest_provider_rows{region="VN",tenant_id="none",provider="ONEPAY"}'
+        values: '100+0x3'
+      - series: 'paymenthub_reconciliation_latest_missing_in_system_rows{region="VN",tenant_id="none",provider="ONEPAY"}'
+        values: '5+0x3'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: CurrencyDeltaExceeded
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: ProviderStatementMissing
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: MissingInSystemRateHigh
+        exp_alerts: []
+
+  - name: abnormal reconciliation emits all three alerts
+    interval: 1m
+    input_series:
+      - series: 'paymenthub_reconciliation_latest_currency_delta_minor{region="VN",tenant_id="none",provider="ONEPAY",currency="VND"}'
+        values: '100001+0x3'
+      - series: 'paymenthub_provider_statement_present{region="VN",tenant_id="none",provider="ONEPAY"}'
+        values: '0+0x3'
+      - series: 'paymenthub_reconciliation_latest_provider_rows{region="VN",tenant_id="none",provider="ONEPAY"}'
+        values: '100+0x3'
+      - series: 'paymenthub_reconciliation_latest_missing_in_system_rows{region="VN",tenant_id="none",provider="ONEPAY"}'
+        values: '6+0x3'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: CurrencyDeltaExceeded
+        exp_alerts:
+          - exp_labels:
+              alertname: CurrencyDeltaExceeded
+              currency: VND
+              provider: ONEPAY
+              region: VN
+              severity: warning
+              tenant_id: none
+            exp_annotations:
+              summary: Reconciliation currency delta exceeds 100000 minor units
+              runbook: docs/runbooks/currency-delta.md
+      - eval_time: 2m
+        alertname: ProviderStatementMissing
+        exp_alerts:
+          - exp_labels:
+              alertname: ProviderStatementMissing
+              provider: ONEPAY
+              region: VN
+              severity: critical
+              tenant_id: none
+            exp_annotations:
+              summary: Provider statement is missing after scheduled run time
+              runbook: docs/runbooks/provider-statement-missing.md
+      - eval_time: 2m
+        alertname: MissingInSystemRateHigh
+        exp_alerts:
+          - exp_labels:
+              alertname: MissingInSystemRateHigh
+              provider: ONEPAY
+              region: VN
+              severity: warning
+              tenant_id: none
+            exp_annotations:
+              summary: MISSING_IN_SYSTEM rate exceeds 5 percent with at least 100 rows
+              runbook: docs/runbooks/missing-in-system-rate.md
