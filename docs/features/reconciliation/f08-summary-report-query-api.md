@@ -112,13 +112,13 @@ sequenceDiagram
 
 | Method | Endpoint | Description |
 |---|---|---|
-| POST | `/recon/runs` | Đã có: trả counts cũ và `financial_summary`, gồm totals, tỷ lệ parent refund và cross-check. |
-| GET | `/recon/runs` | Danh sách run có filter và cursor; xem mục 8. |
-| GET | `/recon/runs/{run_id}/summary` | Run status, scope, counts và totals. |
-| GET | `/recon/runs/{run_id}/results` | Filtered/paginated detailed results. |
-| GET | `/recon/runs/{run_id}/report` | Xuất/tải CSV hoặc XLSX. |
-| GET | `/recon/runs/{run_id}/export.parquet` | Export Parquet có data dictionary. |
-| GET | `/recon/runs/{run_id}/validation-issues` | Optional validation report endpoint `[Need Confirm]`. |
+| POST | `/reconciliation-runs` | Đã có: trả counts cũ và `financial_summary`, gồm totals, tỷ lệ parent refund và cross-check. |
+| GET | `/reconciliation-runs` | Danh sách run có filter và cursor; xem mục 8. |
+| GET | `/reconciliation-runs/{run_id}/summary` | Run status, scope, counts và totals. |
+| GET | `/reconciliation-runs/{run_id}/results` | Filtered/paginated detailed results. |
+| GET | `/reconciliation-runs/{run_id}/report` | Xuất/tải CSV, XLSX hoặc Parquet. |
+| GET | `/reconciliation-runs/{run_id}/report?format=parquet` | Export Parquet có data dictionary. |
+| GET | `/reconciliation-runs/{run_id}/validation-issues` | Optional validation report endpoint `[Need Confirm]`. |
 
 ### Request/Response
 
@@ -137,7 +137,7 @@ GET query, exports và metadata đã implement theo contract bên dưới.
 
 ### Financial summary đã implement
 
-`POST /recon/runs` giữ `summary` là counts theo classification và bổ sung
+`POST /reconciliation-runs` giữ `summary` là counts theo classification và bổ sung
 `financial_summary` với các nhóm số liệu bên dưới. `build_financial_summary` tính từ
 `ReconResult`; rerun dùng cùng hàm trên persisted results, không đọc lại nguồn.
 
@@ -269,19 +269,19 @@ migration không backfill từ dữ liệu hiện tại vì sẽ thay đổi sna
 
 ## 8. Query/export API đã triển khai
 
-- `GET /recon/runs`: filter `region`, `tenant_id`, `provider`, `business_date`,
+- `GET /reconciliation-runs`: filter `region`, `tenant_id`, `provider`, `business_date`,
   `status` (`RUNNING`, `FAILED`, `COMPLETED`); `limit` mặc định 50, tối đa 200;
   `cursor`; whitelist sort hiện chỉ có `run_id` tăng dần.
-- `GET /recon/runs/{run_id}/summary`: metadata run, `system_count`,
+- `GET /reconciliation-runs/{run_id}/summary`: metadata run, `system_count`,
   `provider_count` (counts đầu vào đã lưu), classification summary và financial summary.
-- `GET /recon/runs/{run_id}/results`: filter `result`, `limit`, `cursor`;
+- `GET /reconciliation-runs/{run_id}/results`: filter `result`, `limit`, `cursor`;
   whitelist sort chỉ có `result_key` tăng dần. Mỗi item có result key và evidence
   từ persisted result, không có raw payload. Cursor ràng buộc với run/filter/sort;
   cursor sai hoặc dùng sai query trả 422.
-- `GET /recon/runs/{run_id}/report?format=csv|xlsx`: mặc định CSV UTF-8 BOM;
+- `GET /reconciliation-runs/{run_id}/report?format=csv|xlsx|parquet`: mặc định CSV UTF-8 BOM;
   XLSX lưu tiền dưới dạng text để bảo toàn integer lớn. Chuỗi CSV có thể được
   spreadsheet hiểu thành công thức được escape bằng dấu nháy đơn.
-- `GET /recon/runs/{run_id}/export.parquet`: monetary fields là decimal128(38,0),
+- `GET /reconciliation-runs/{run_id}/report?format=parquet`: monetary fields là decimal128(38,0),
   giữ null và currency từng phía; schema metadata có `data_dictionary`, `data_as_of`.
   Test dùng DuckDB để kiểm tra count và tổng tiền.
 

@@ -40,7 +40,7 @@ sequenceDiagram
     participant Parser as ProviderStatementParser
     participant UseCase as RunMatching
 
-    Client->>API: POST /recon/runs with multipart statement and scope
+    Client->>API: POST /reconciliation-runs with multipart statement and scope
     API->>API: Reject empty file and sanitize filename
     API->>Parser: Parse bytes using fixture contract
     Parser->>Parser: Validate encoding, delimiter, headers and rows
@@ -69,7 +69,7 @@ sequenceDiagram
 
 | Component | Change |
 |---|---|
-| `reconciliation.api.create_reconciliation_run` | Đã triển khai multipart command endpoint. |
+| `reconciliation.adapters.http.create_reconciliation_run` | Đã triển khai multipart command endpoint. |
 | `ProviderStatementParser` / `ParseReport` | Đã triển khai port và validation model. |
 | `CsvFixtureParser` | Đã triển khai internal fixture contract. |
 | Official provider parser | Blocked: chờ team cung cấp sample/spec chính thức; không tự giả định contract. |
@@ -80,7 +80,7 @@ sequenceDiagram
 
 | Method | Endpoint | Description |
 |---|---|---|
-| POST | `/recon/runs` | Upload statement và chạy reconciliation đồng bộ. |
+| POST | `/reconciliation-runs` | Upload statement và chạy reconciliation đồng bộ. |
 
 ### Request/Response
 
