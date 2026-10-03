@@ -19,16 +19,21 @@ from reconciliation.adapters.daily_scheduler import (
 statement_present = Gauge(
     "paymenthub_provider_statement_present",
     "Whether the provider statement exists after its scheduled run time.",
-    ("region", "tenant_id", "provider"),
+    ("region", "tenant_id", "provider", "business_date"),
 )
 
 
 def _emit(event: str, context: dict[str, object]) -> None:
     if event in {"statement_missing", "run_failed", "run_submitted"}:
+        scope = (
+            str(context["region"]),
+            str(context.get("tenant_id") or "none"),
+            str(context["provider"]),
+        )
+        business_date = str(context["business_date"])
         statement_present.labels(
-            region=str(context["region"]),
-            tenant_id=str(context.get("tenant_id") or "none"),
-            provider=str(context["provider"]),
+            region=scope[0], tenant_id=scope[1], provider=scope[2],
+            business_date=business_date,
         ).set(0 if event == "statement_missing" else 1)
     print(json.dumps({"event": event, **context}, separators=(",", ":")), flush=True)
 

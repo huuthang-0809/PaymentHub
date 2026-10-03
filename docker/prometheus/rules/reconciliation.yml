@@ -1,33 +1,38 @@
 groups:
   - name: paymenthub-reconciliation
     rules:
-      - alert: CurrencyDeltaExceeded
-        expr: abs(paymenthub_reconciliation_latest_currency_delta_minor) > 100000
-        for: 1m
+      - alert: CurrencyDeltaExceeded # alert when delta minor unit > 100.000
+        expr: abs(paymenthub_reconciliation_run_currency_delta_minor) > 100000
+        for: 1s # above condition correct in 1 minutes continuously -> firing
         labels:
           severity: warning
         annotations:
           summary: Reconciliation currency delta exceeds 100000 minor units
+          run_id: '{{ $labels.run_id }}'
+          business_date: '{{ $labels.business_date }}'
           runbook: docs/runbooks/currency-delta.md
 
-      - alert: ProviderStatementMissing
+      - alert: ProviderStatementMissing # alert when missing provider file
         expr: paymenthub_provider_statement_present == 0
-        for: 1m
+        for: 1s
         labels:
           severity: critical
         annotations:
           summary: Provider statement is missing after scheduled run time
+          business_date: '{{ $labels.business_date }}'
           runbook: docs/runbooks/provider-statement-missing.md
 
       - alert: MissingInSystemRateHigh
         expr: |
-          paymenthub_reconciliation_latest_provider_rows >= 100
+          paymenthub_reconciliation_run_provider_rows >= 100
           and
-          paymenthub_reconciliation_latest_missing_in_system_rows
-          / paymenthub_reconciliation_latest_provider_rows > 0.05
-        for: 1m
+          paymenthub_reconciliation_run_missing_in_system_rows
+          / paymenthub_reconciliation_run_provider_rows > 0.05
+        for: 1s
         labels:
           severity: warning
         annotations:
           summary: MISSING_IN_SYSTEM rate exceeds 5 percent with at least 100 rows
+          run_id: '{{ $labels.run_id }}'
+          business_date: '{{ $labels.business_date }}'
           runbook: docs/runbooks/missing-in-system-rate.md

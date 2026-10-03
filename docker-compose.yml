@@ -97,7 +97,28 @@ services:
       api:
         condition: service_started
 
-  verify-data:
+  month-simulation:
+    profiles: ["simulation"]
+    build:
+      context: .
+      dockerfile: docker/test-data-generator.Dockerfile
+    command: ["python", "-m", "tests.data_generator.month_simulation"]
+    environment:
+      MONGO_URI: mongodb://mongodb:27017
+      RECON_API_URL: http://api:8000
+      SIMULATION_START_DATE: ${SIMULATION_START_DATE:-2026-09-01}
+      SIMULATION_DAYS: ${SIMULATION_DAYS:-30}
+      SIMULATION_SECONDS_PER_DAY: ${SIMULATION_SECONDS_PER_DAY:-2}
+      SIMULATION_MISSING_STATEMENT_COUNT: ${SIMULATION_MISSING_STATEMENT_COUNT:-2}
+      RECORDS_PER_REGION: ${SIMULATION_RECORDS_PER_REGION:-100}
+      SIMULATION_OUTPUT_DIR: /test-data/month-simulation
+    depends_on:
+      api:
+        condition: service_started
+    volumes:
+      - ./tests/generated:/test-data
+
+  verify-data: # verify data insert into MongoDB with groundtruth.
     build:
       context: .
       dockerfile: docker/test-data-generator.Dockerfile
@@ -116,7 +137,7 @@ services:
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
-      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-15d}
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-15d} # keep data for 15d
     ports:
       - "9090:9090"
     volumes:

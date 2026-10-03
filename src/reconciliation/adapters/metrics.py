@@ -1,5 +1,7 @@
 from __future__ import annotations
+from datetime import date
 from typing import Mapping
+from uuid import UUID
 from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, REGISTRY
 from shared_kernel import Region
 
@@ -8,6 +10,7 @@ class ReconciliationMetrics:
 
     def __init__(self, registry: CollectorRegistry = REGISTRY) -> None: # registry: registry metrics, REGISTRY: defaut Registry
         labels = ("region", "tenant_id", "provider")
+        correlation = ("run_id", "business_date")
         self.requests = Counter(
             "paymenthub_reconciliation_requests_total",
             "Reconciliation requests by terminal outcome.",
@@ -46,22 +49,22 @@ class ReconciliationMetrics:
             buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30),
             registry=registry,
         )
-        self.latest_currency_delta = Gauge(
-            "paymenthub_reconciliation_latest_currency_delta_minor",
-            "Currency delta in minor units for the latest completed run.",
-            (*labels, "currency"),
+        self.run_currency_delta = Gauge(
+            "paymenthub_reconciliation_run_currency_delta_minor",
+            "Currency delta in minor units for a completed reconciliation run.",
+            (*labels, "currency", *correlation),
             registry=registry,
         )
-        self.latest_provider_rows = Gauge(
-            "paymenthub_reconciliation_latest_provider_rows",
-            "Provider rows in the latest completed run.",
-            labels,
+        self.run_provider_rows = Gauge(
+            "paymenthub_reconciliation_run_provider_rows",
+            "Provider rows in a completed reconciliation run.",
+            (*labels, *correlation),
             registry=registry,
         )
-        self.latest_missing_in_system_rows = Gauge(
-            "paymenthub_reconciliation_latest_missing_in_system_rows",
-            "MISSING_IN_SYSTEM rows in the latest completed run.",
-            labels,
+        self.run_missing_in_system_rows = Gauge(
+            "paymenthub_reconciliation_run_missing_in_system_rows",
+            "MISSING_IN_SYSTEM rows in a completed reconciliation run.",
+            (*labels, *correlation),
             registry=registry,
         )
 
@@ -97,6 +100,8 @@ class ReconciliationMetrics:
     def record_run(
         self,
         *,
+        run_id: UUID | None,
+        business_date: date,
         region: Region,
         tenant_id: str | None,
         provider: str,
@@ -117,9 +122,19 @@ class ReconciliationMetrics:
         for result, count in (summary or {}).items():
             self.results.labels(**labels, result=result).inc(count)
         self.last_success.labels(**labels).set_to_current_time()
-        self.latest_provider_rows.labels(**labels).set(provider_rows or 0)
-        self.latest_missing_in_system_rows.labels(**labels).set(
+        if run_id is None:
+            return
+
+        run_labels = {
+            **labels,
+            "run_id": str(run_id),
+            "business_date": business_date.isoformat(),
+        }
+        self.run_provider_rows.labels(**run_labels).set(provider_rows or 0)
+        self.run_missing_in_system_rows.labels(**run_labels).set(
             (summary or {}).get("MISSING_IN_SYSTEM", 0)
         )
         for currency, delta in (currency_deltas or {}).items():
-            self.latest_currency_delta.labels(**labels, currency=currency).set(delta)
+            self.run_currency_delta.labels(
+                **run_labels, currency=currency
+            ).set(delta)
