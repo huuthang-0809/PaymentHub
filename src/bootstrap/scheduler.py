@@ -3,7 +3,7 @@
 import json
 import os
 import signal
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 from threading import Event
 
@@ -15,7 +15,6 @@ from reconciliation.adapters.daily_scheduler import (
     load_schedules,
 )
 
-
 statement_present = Gauge(
     "paymenthub_provider_statement_present",
     "Whether the provider statement exists after its scheduled run time.",
@@ -25,17 +24,22 @@ statement_present = Gauge(
 
 def _emit(event: str, context: dict[str, object]) -> None:
     if event in {"statement_missing", "run_failed", "run_submitted"}:
-        scope = (
-            str(context["region"]),
-            str(context.get("tenant_id") or "none"),
-            str(context["provider"]),
-        )
-        business_date = str(context["business_date"])
         statement_present.labels(
-            region=scope[0], tenant_id=scope[1], provider=scope[2],
-            business_date=business_date,
+            region=str(context["region"]),
+            tenant_id=str(context.get("tenant_id") or "none"),
+            provider=str(context["provider"]),
+            business_date=str(context["business_date"]),
         ).set(0 if event == "statement_missing" else 1)
     print(json.dumps({"event": event, **context}, separators=(",", ":")), flush=True)
+
+
+def virtual_times(start: date, days: int) -> tuple[datetime, ...]:
+    if days <= 0:
+        raise ValueError("RECON_SIMULATION_DAYS must be positive")
+    return tuple(
+        datetime.combine(start + timedelta(days=offset), time(12), UTC)
+        for offset in range(days)
+    )
 
 
 def main() -> None:
@@ -50,6 +54,8 @@ def main() -> None:
         HttpReconciliationSubmitter(
             os.getenv("RECON_API_URL", "http://api:8000"),
             float(os.getenv("RECON_API_TIMEOUT_SECONDS", "30")),
+            float(os.getenv("RECON_STATUS_POLL_SECONDS", "1")),
+            float(os.getenv("RECON_STATUS_TIMEOUT_SECONDS", "3600")),
         ),
         _emit,
     )
@@ -61,6 +67,36 @@ def main() -> None:
     signal.signal(signal.SIGTERM, stop) # SIGTERM: kill from system
     signal.signal(signal.SIGINT, stop) # SIGINT: ctrl+C from user
     _emit("scheduler_started", {"schedule_count": len(schedules)})
+
+    simulation_start = os.getenv("RECON_SIMULATION_START_DATE")
+    if simulation_start:
+        seconds_per_day = float(
+            os.getenv("RECON_SIMULATION_SECONDS_PER_DAY", "2")
+        )
+        if seconds_per_day < 0:
+            raise ValueError(
+                "RECON_SIMULATION_SECONDS_PER_DAY must not be negative"
+            )
+        times = virtual_times(
+            date.fromisoformat(simulation_start),
+            int(os.getenv("RECON_SIMULATION_DAYS", "1")),
+        )
+        for index, now in enumerate(times):
+            if stopped.is_set():
+                break
+            scheduler.run_due(now)
+            _emit(
+                "virtual_day_completed",
+                {"business_date": now.date().isoformat(), "day": index + 1},
+            )
+            if now != times[-1]:
+                stopped.wait(seconds_per_day)
+        if not stopped.is_set():
+            _emit("scheduler_simulation_completed", {"days": len(times)})
+            stopped.wait()
+        _emit("scheduler_stopped", {})
+        return
+
     while not stopped.is_set():
         scheduler.run_due(datetime.now(UTC))
         stopped.wait(poll_seconds)

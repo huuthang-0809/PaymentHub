@@ -1,20 +1,19 @@
 """Inbound HTTP adapter for the reconciliation bounded context."""
-from datetime import UTC, date, datetime, time
+from datetime import date, time
 from pathlib import Path
 from typing import Annotated, Literal
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
-from reconciliation.application import InvalidProviderStatement, RunInProgress
 from reconciliation.application.ports import (
-    ExportFailed, MatchingRunner, QueryUnavailable, ReconRunDeleter,
+    ExportFailed, QueryUnavailable, ReconRunDeleter, RunInProgress,
     RunNotCompleted, RunNotFound,
 )
-from reconciliation.application.summary import FinancialSummary
+from reconciliation.application.calendar import resolve_business_period
 from reconciliation.domain import ReconResultType
 from shared_kernel import Region
 
@@ -22,20 +21,15 @@ from shared_kernel import Region
 router = APIRouter(prefix="/reconciliation-runs", tags=["reconciliation"])
 
 
-class ReconciliationRunResponse(BaseModel):
+class ReconciliationAcceptedResponse(BaseModel):
     run_id: UUID
-    job_run_id: UUID
-    system_rows: int
-    provider_rows: int
-    summary: dict[str, int]
-    financial_summary: FinancialSummary
-    meta: dict[str, datetime] = Field(default_factory=lambda: {"data_as_of": datetime.now(UTC)})
+    status: Literal["PENDING"] = "PENDING"
 
 
 @router.post(
     "",
-    response_model=ReconciliationRunResponse,
-    status_code=status.HTTP_201_CREATED,
+    response_model=ReconciliationAcceptedResponse,
+    status_code=status.HTTP_202_ACCEPTED,
 )
 def create_reconciliation_run(
     request: Request,
@@ -46,43 +40,35 @@ def create_reconciliation_run(
     business_timezone: Annotated[str, Form(min_length=1)],
     cutoff_time: Annotated[time, Form()],
     tenant_id: Annotated[str | None, Form()] = None,
-) -> ReconciliationRunResponse:
+) -> ReconciliationAcceptedResponse:
     content = statement.file.read()
     if not content:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "empty statement")
 
     filename = Path(statement.filename or "provider-statement.csv").name
-    runner: MatchingRunner = request.app.state.run_reconciliation
+    normalized_provider = provider.strip().upper()
+    run_id = uuid4()
     try:
-        output = runner(
+        period = resolve_business_period(
+            business_date, business_timezone, cutoff_time
+        )
+        run_id = request.app.state.submit_reconciliation(
             statement=Path(filename),
             statement_content=content,
             business_date=business_date,
             region=region,
             tenant_id=tenant_id,
-            provider=provider,
-            business_timezone=business_timezone,
-            cutoff_time=cutoff_time,
+            provider=normalized_provider,
+            business_timezone=period.timezone,
+            cutoff_time=period.cutoff_time,
+            run_id=run_id,
         )
-    except InvalidProviderStatement as exc:
-        raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)
-        ) from exc
-    except RunInProgress as exc:
-        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)
         ) from exc
 
-    return ReconciliationRunResponse(
-        run_id=output.run_id,
-        job_run_id=output.job_run_id,
-        system_rows=output.system_rows,
-        provider_rows=output.provider_rows,
-        summary=output.summary,
-        financial_summary=output.financial_summary,
-    )
+    return ReconciliationAcceptedResponse(run_id=run_id)
 
 
 def _query(operation, **parameters):
@@ -112,18 +98,19 @@ def delete_reconciliation_run(request: Request, run_id: UUID) -> Response:
 @router.get('')
 def list_reconciliation_runs(
     request: Request,
+    run_id: UUID | None = None,
     region: Region | None = None,
     tenant_id: str | None = None,
     provider: str | None = None,
     business_date: date | None = None,
-    status: Literal['RUNNING', 'FAILED', 'COMPLETED'] | None = None,
+    status: Literal['PENDING', 'RUNNING', 'FAILED', 'COMPLETED'] | None = None,
     limit: int = Query(50, ge=1, le=200),
     cursor: str | None = None,
     sort: Literal['run_id'] = 'run_id',
 ):
     return jsonable_encoder(_query( #jsonable_encoder help transform dict -> json
         request.app.state.query_reconciliation.runs,
-        region=region, tenant_id=tenant_id, provider=provider,
+        run_id=run_id, region=region, tenant_id=tenant_id, provider=provider,
         business_date=business_date, status=status, limit=limit, cursor=cursor, sort=sort,
     ))
 

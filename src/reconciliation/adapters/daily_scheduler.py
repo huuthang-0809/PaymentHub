@@ -1,12 +1,14 @@
 """Small daily trigger that submits statements already present on disk."""
 
 import json
+import time as clock
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from pathlib import Path
 from typing import Callable
+from urllib.parse import urlencode
 from urllib.request import Request, urlopen
-from uuid import uuid4
+from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from shared_kernel import Region
@@ -144,9 +146,21 @@ class DailyReconciliationScheduler:
 
 
 class HttpReconciliationSubmitter:
-    def __init__(self, api_url: str, timeout_seconds: float = 30) -> None:
+    def __init__(
+        self,
+        api_url: str,
+        timeout_seconds: float = 30,
+        poll_interval_seconds: float = 1,
+        poll_timeout_seconds: float = 3600,
+    ) -> None:
         self.endpoint = api_url.rstrip("/") + "/reconciliation-runs"
         self.timeout_seconds = timeout_seconds
+        self.poll_interval_seconds = poll_interval_seconds
+        self.poll_timeout_seconds = poll_timeout_seconds
+        if min(
+            timeout_seconds, poll_interval_seconds, poll_timeout_seconds
+        ) <= 0:
+            raise ValueError("HTTP and polling timeouts must be positive")
 
     def __call__(
         self,
@@ -171,8 +185,40 @@ class HttpReconciliationSubmitter:
             method="POST",
             headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
         )
+        accepted = self._json_request(request)
+        try:
+            run_id = str(UUID(str(accepted["run_id"])))
+        except (KeyError, TypeError, ValueError) as error:
+            raise RuntimeError("Invalid reconciliation acceptance response") from error
+        runs_url = f"{self.endpoint}?{urlencode({'run_id': run_id, 'limit': 1})}"
+
+        deadline = clock.monotonic() + self.poll_timeout_seconds
+        while clock.monotonic() < deadline:
+            current = self._json_request(Request(runs_url, method="GET"))
+            items = current.get("items")
+            if not isinstance(items, list):
+                raise RuntimeError("Invalid reconciliation runs response")
+            if not items:
+                clock.sleep(self.poll_interval_seconds)
+                continue
+            run_status = items[0].get("status")
+            if run_status == "COMPLETED":
+                return
+            if run_status == "FAILED":
+                raise RuntimeError(f"Reconciliation run failed: {run_id}")
+            if run_status not in {"PENDING", "RUNNING"}:
+                raise RuntimeError(
+                    f"Unknown reconciliation status: {run_status!r}"
+                )
+            clock.sleep(self.poll_interval_seconds)
+        raise TimeoutError(f"Reconciliation polling timed out: {run_id}")
+
+    def _json_request(self, request: Request) -> dict:
         with urlopen(request, timeout=self.timeout_seconds) as response:
-            response.read()
+            payload = json.loads(response.read())
+        if not isinstance(payload, dict):
+            raise RuntimeError("Expected a JSON object from reconciliation API")
+        return payload
 
 
 def _multipart(fields: dict[str, str], statement: Path, boundary: str) -> bytes:

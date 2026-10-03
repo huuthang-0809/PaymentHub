@@ -56,6 +56,20 @@ class ReconciliationTelemetry(Protocol):
 
 
 class ReconRepository(Protocol):
+    def enqueue_run(
+        self,
+        *,
+        business_date: date,
+        region: Region,
+        tenant_id: str | None,
+        provider: str,
+        statement: Path,
+        statement_content: bytes,
+        business_timezone: str,
+        cutoff_time: time,
+        run_id: UUID,
+    ) -> "RunSubmission": ...
+
     def claim_run(
         self,
         *,
@@ -108,6 +122,12 @@ class RunClaim: # Run info that request is processing
     job_run_id: UUID
     existing: StoredRun | None = None
     business_date: date | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class RunSubmission:
+    run_id: UUID
+    should_start: bool
 
 
 class RunInProgress(Exception): #409 Conflict
@@ -165,7 +185,8 @@ class ExportFailed(Exception):
 
 
 class ReconQuery(Protocol):
-    def runs(self, *, region: str | None = None, tenant_id: str | None = None,
+    def runs(self, *, run_id: UUID | None = None, region: str | None = None,
+             tenant_id: str | None = None,
              provider: str | None = None, business_date: date | None = None,
              status: str | None = None) -> list[dict]: ...
 

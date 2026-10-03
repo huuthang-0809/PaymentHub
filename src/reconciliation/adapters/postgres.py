@@ -11,9 +11,17 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from psycopg import Connection
 from psycopg.types.json import Jsonb
 
-from reconciliation.application.ports import RunClaim, RunInProgress, StoredRun
+from reconciliation.application.ports import (
+    RunClaim,
+    RunInProgress,
+    RunSubmission,
+    StoredRun,
+)
 from reconciliation.domain import ProviderTransaction, ReconResult, ReconResultType
 from shared_kernel import CanonicalStatus, Region, TxnType
+
+
+INSERT_BATCH_SIZE = 10_000
 
 
 class PostgreReconRepository:
@@ -34,6 +42,97 @@ class PostgreReconRepository:
         self.connection = connection
         self.business_timezone = business_timezone
 
+    @staticmethod
+    def _input_identity(
+        business_date: date, provider: str, statement_content: bytes
+    ) -> tuple[str, int]:
+        checksum = hashlib.sha256(statement_content).hexdigest()
+        identity = json.dumps(
+            [business_date.isoformat(), provider, checksum],
+            separators=(",", ":"),
+        ).encode()
+        lock_key = int.from_bytes(
+            hashlib.sha256(identity).digest()[:8], "big", signed=True
+        )
+        return checksum, lock_key
+
+    @staticmethod
+    def _validate_scope(
+        row, region: Region, tenant_id: str | None,
+        business_timezone: str, cutoff_time: time,
+    ) -> None:
+        stored_region, stored_tenant_id, stored_timezone, stored_cutoff = row
+        if stored_region != region.value or stored_tenant_id != tenant_id:
+            raise ValueError(
+                "Statement checksum already belongs to a different "
+                "region or tenant for this date and provider"
+            )
+        if (stored_timezone, stored_cutoff) != (business_timezone, cutoff_time):
+            raise ValueError("Existing run uses a different timezone or cutoff")
+
+    def enqueue_run(
+        self,
+        *,
+        business_date: date,
+        region: Region,
+        tenant_id: str | None,
+        provider: str,
+        statement: Path,
+        statement_content: bytes,
+        business_timezone: str,
+        cutoff_time: time,
+        run_id: UUID,
+    ) -> RunSubmission:
+        """Durably register work before it is submitted to the background pool."""
+        checksum, lock_key = self._input_identity(
+            business_date, provider, statement_content
+        )
+        with self.connection.transaction(), self.connection.cursor() as cursor:
+            cursor.execute("SELECT pg_advisory_xact_lock(%s)", (lock_key,))
+            cursor.execute(
+                """
+                SELECT run_id, job_run_id, status, region, tenant_id,
+                       business_timezone, cutoff_time
+                FROM recon_run
+                WHERE business_date = %s AND provider = %s
+                  AND file_checksum = %s
+                """,
+                (business_date, provider, checksum),
+            )
+            row = cursor.fetchone()
+            if row is not None:
+                (existing_run_id, _job_run_id, current_status, *scope) = row
+                self._validate_scope(
+                    scope, region, tenant_id, business_timezone, cutoff_time
+                )
+                return RunSubmission(
+                    existing_run_id,
+                    current_status in {"PENDING", "FAILED"},
+                )
+
+            job_run_id = uuid4()
+            cursor.execute(
+                """
+                INSERT INTO job_run_log (
+                    job_run_id, job_name, business_date, region,
+                    tenant_id, provider, status
+                ) VALUES (%s, 'reconciliation', %s, %s, %s, %s, 'PENDING')
+                """,
+                (job_run_id, business_date, region.value, tenant_id, provider),
+            )
+            cursor.execute(
+                """
+                INSERT INTO recon_run (
+                    run_id, job_run_id, business_date, region, tenant_id,
+                    provider, source_file, file_checksum, business_timezone,
+                    cutoff_time, status
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'PENDING')
+                """,
+                (run_id, job_run_id, business_date, region.value, tenant_id,
+                 provider, str(statement), checksum, business_timezone, cutoff_time),
+            )
+            return RunSubmission(run_id, True)
+
     @contextmanager #alway run 'finally' last to unlock key
     def claim_run(
         self,
@@ -49,18 +148,11 @@ class PostgreReconRepository:
         run_id: UUID | None = None,
     ) -> Iterator[RunClaim]:
         """Create hash and lock key. Insert into job_run_log and recon_run with status RUNNING"""
-        checksum = hashlib.sha256(statement_content).hexdigest()
+        checksum, lock_key = self._input_identity(
+            business_date, provider, statement_content
+        )
         # Session lock spans the Mongo/matching phase; unlike a transaction lock,
         # it survives the durable RUNNING commit and is released on connection loss.
-        lock_key = int.from_bytes(
-            hashlib.sha256(
-                json.dumps(
-                    [business_date.isoformat(), provider, checksum],
-                    separators=(",", ":"),
-                ).encode()
-            ).digest()[:8],
-            "big", signed=True,
-        )
         locked = False
         try:
             with self.connection.transaction(), self.connection.cursor() as cursor:
@@ -106,20 +198,16 @@ class PostgreReconRepository:
                         resolved_run_id, job_run_id, business_date=business_date,
                     )
                 else:
-                    (resolved_run_id, job_run_id, current_status,
-                     stored_region, stored_tenant_id, stored_timezone, stored_cutoff) = row
-                    if stored_region != region.value or stored_tenant_id != tenant_id:
-                        raise ValueError(
-                            "Statement checksum already belongs to a different "
-                            "region or tenant for this date and provider"
-                        )
-                    if (stored_timezone, stored_cutoff) != (business_timezone, cutoff_time):
-                        raise ValueError("Existing run uses a different timezone or cutoff")
+                    (resolved_run_id, job_run_id, current_status, *scope) = row
+                    self._validate_scope(
+                        scope, region, tenant_id, business_timezone, cutoff_time
+                    )
                     if current_status == "COMPLETED":
                         claim = RunClaim(
                             resolved_run_id, job_run_id,
                             self._load_completed(
                                 cursor, resolved_run_id, job_run_id, business_date,
+                                include_results=False,
                             ),
                             business_date,
                         )
@@ -155,26 +243,30 @@ class PostgreReconRepository:
     @staticmethod
     def _load_completed(
         cursor, run_id: UUID, job_run_id: UUID, business_date: date,
+        *, include_results: bool = True,
     ) -> StoredRun:
         cursor.execute(
             "SELECT metrics FROM job_run_log WHERE job_run_id = %s",
             (job_run_id,),
         )
         metrics = cursor.fetchone()[0]
-        cursor.execute(
-            """
-            SELECT result_type, region, tenant_id, provider, txn_type,
-                   system_txn_id, system_provider_txn_id, system_status,
-                   system_amount_minor, system_currency,
-                   refund_of, refunded_amount_minor,
-                   provider_txn_id, provider_amount_minor, provider_currency,
-                   delta_amount, source_file, source_row_number, reason
-            FROM recon_result
-            WHERE business_date = %s AND run_id = %s
-            ORDER BY result_key
-            """,
-            (business_date, run_id),
-        )
+        rows = ()
+        if include_results:
+            cursor.execute(
+                """
+                SELECT result_type, region, tenant_id, provider, txn_type,
+                       system_txn_id, system_provider_txn_id, system_status,
+                       system_amount_minor, system_currency,
+                       refund_of, refunded_amount_minor,
+                       provider_txn_id, provider_amount_minor, provider_currency,
+                       delta_amount, source_file, source_row_number, reason
+                FROM recon_result
+                WHERE business_date = %s AND run_id = %s
+                ORDER BY result_key
+                """,
+                (business_date, run_id),
+            )
+            rows = cursor.fetchall()
         results = tuple(
             ReconResult(
                 run_id=str(run_id), result_type=ReconResultType(row[0]),
@@ -188,7 +280,7 @@ class PostgreReconRepository:
                 provider_currency=row[14], delta_amount=row[15],
                 source_file=row[16], source_row_number=row[17], reason=row[18],
             )
-            for row in cursor.fetchall()
+            for row in rows
         )
         return StoredRun(
             # Runs created before F06 did not store system_rows in metrics.
@@ -228,8 +320,7 @@ class PostgreReconRepository:
                 "SELECT ensure_reconciliation_day_partitions(%s)",
                 (business_date,),
             )
-            cursor.executemany(
-                """
+            provider_sql = """
                 INSERT INTO provider_txn (
                     business_date, run_id, job_run_id, region, tenant_id,
                     provider, txn_type,
@@ -241,34 +332,37 @@ class PostgreReconRepository:
                     %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                     %s, %s, %s, %s, %s, %s, %s, %s, %s
                 )
-                """,
-                [
-                    (
-                        business_date,
-                        run_id,
-                        job_run_id,
-                        txn.region.value,
-                        txn.tenant_id,
-                        txn.provider,
-                        txn.txn_type.value,
-                        txn.provider_txn_id,
-                        txn.provider_ref_id,
-                        txn.merchant_ref,
-                        txn.merchant_id,
-                        txn.amount_minor,
-                        txn.currency,
-                        txn.status,
-                        txn.transaction_time,
-                        txn.late_arriving,
-                        txn.source_file,
-                        txn.source_row_number,
-                        Jsonb(txn.raw),
-                    )
-                    for txn in provider_txns
-                ],
-            )
-            cursor.executemany(
                 """
+            for offset in range(0, len(provider_txns), INSERT_BATCH_SIZE):
+                batch = provider_txns[offset : offset + INSERT_BATCH_SIZE]
+                cursor.executemany(
+                    provider_sql,
+                    [
+                        (
+                            business_date,
+                            run_id,
+                            job_run_id,
+                            txn.region.value,
+                            txn.tenant_id,
+                            txn.provider,
+                            txn.txn_type.value,
+                            txn.provider_txn_id,
+                            txn.provider_ref_id,
+                            txn.merchant_ref,
+                            txn.merchant_id,
+                            txn.amount_minor,
+                            txn.currency,
+                            txn.status,
+                            txn.transaction_time,
+                            txn.late_arriving,
+                            txn.source_file,
+                            txn.source_row_number,
+                            Jsonb(txn.raw),
+                        )
+                        for txn in batch
+                    ],
+                )
+            result_sql = """
                 INSERT INTO recon_result (
                     business_date, run_id, job_run_id, result_key,
                     result_type, region,
@@ -283,36 +377,45 @@ class PostgreReconRepository:
                     %s, %s, %s, %s, %s, %s, %s, %s, %s,
                     %s, %s, %s, %s, %s
                 )
-                """,
-                [
-                    (
-                        business_date,
-                        run_id,
-                        job_run_id,
-                        index,
-                        result.result_type.value,
-                        result.region.value,
-                        result.tenant_id,
-                        result.provider,
-                        result.txn_type.value if result.txn_type else None,
-                        result.system_txn_id,
-                        result.system_provider_txn_id,
-                        result.system_status.value if result.system_status else None,
-                        result.system_amount_minor,
-                        result.system_currency,
-                        result.refund_of,
-                        result.refunded_amount_minor,
-                        result.provider_txn_id,
-                        result.provider_amount_minor,
-                        result.provider_currency,
-                        result.delta_amount,
-                        result.source_file,
-                        result.source_row_number,
-                        result.reason,
-                    )
-                    for index, result in enumerate(results, start=1)
-                ],
-            )
+                """
+            for offset in range(0, len(results), INSERT_BATCH_SIZE):
+                batch = results[offset : offset + INSERT_BATCH_SIZE]
+                cursor.executemany(
+                    result_sql,
+                    [
+                        (
+                            business_date,
+                            run_id,
+                            job_run_id,
+                            index,
+                            result.result_type.value,
+                            result.region.value,
+                            result.tenant_id,
+                            result.provider,
+                            result.txn_type.value if result.txn_type else None,
+                            result.system_txn_id,
+                            result.system_provider_txn_id,
+                            (
+                                result.system_status.value
+                                if result.system_status else None
+                            ),
+                            result.system_amount_minor,
+                            result.system_currency,
+                            result.refund_of,
+                            result.refunded_amount_minor,
+                            result.provider_txn_id,
+                            result.provider_amount_minor,
+                            result.provider_currency,
+                            result.delta_amount,
+                            result.source_file,
+                            result.source_row_number,
+                            result.reason,
+                        )
+                        for index, result in enumerate(
+                            batch, start=offset + 1
+                        )
+                    ],
+                )
             cursor.execute(
                 "UPDATE recon_run SET status = 'COMPLETED', finished_at = now() "
                 "WHERE run_id = %s AND status = 'RUNNING'",
