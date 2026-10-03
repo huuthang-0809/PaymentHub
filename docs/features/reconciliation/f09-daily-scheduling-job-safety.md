@@ -33,8 +33,11 @@
 ### Flow
 
 Filesystem scheduler đã được triển khai thành process riêng. Nó gọi endpoint
-`POST /reconciliation-runs`; endpoint này tiếp tục gọi cùng `RunMatching.execute()`
-với luồng upload thủ công.
+`POST /reconciliation-runs`, nhận `202 Accepted`, rồi lọc `run_id` qua endpoint danh sách trong
+khi background worker gọi cùng `RunMatching.execute()` với luồng upload thủ công.
+Scheduler dùng thời gian thực theo mặc định. Khi có `RECON_SIMULATION_START_DATE`,
+nó truyền lần lượt các ngày ảo vào cùng `run_due()`; không có pipeline hay metrics
+server riêng cho simulation.
 
 Giả định của luồng này: **file provider đã có sẵn và ghi hoàn tất trong thư mục
 được cấu hình**, ví dụ `/statements`. Scheduler đến giờ sẽ đọc file theo
@@ -97,10 +100,10 @@ file quá hạn thuộc F10A; watchdog phát hiện job không chạy thuộc F1
 
 1. Scheduler đọc `RECON_SCHEDULES_JSON` và kiểm tra lịch theo `RECON_SCHEDULER_POLL_SECONDS` (mặc định 60 giây).
 2. Khi đến giờ, xác định kỳ cần chạy và đọc file đã có trong thư mục cấu hình. Đường dẫn phải xác định được region/provider/tenant và business date.
-3. Gửi multipart request gồm bytes, tên file, scope, `business_date`, `business_timezone` và `cutoff_time` tới API; API gọi `RunMatching.execute()`.
+3. Gửi multipart request tới API, nhận `run_id`, rồi poll status. Mỗi HTTP request có timeout riêng; thời gian xử lý reconciliation không còn bị giới hạn bởi request upload.
 4. Dùng claim/lock của F06: input đang chạy thì skip; input đã hoàn tất thì replay kết quả; input mới hoặc run lỗi đủ điều kiện retry thì thực thi pipeline.
 5. Pipeline đọc system, lọc provider theo kỳ và matching. Ghi chi tiết cùng trạng thái `COMPLETED` trong một transaction; lỗi ghi chi tiết thì rollback. Khi lỗi, ghi `FAILED` nếu còn kết nối DB.
-6. Scheduler nhớ scope/date đã submit thành công trong bộ nhớ để không gọi lại mỗi phút. Sau restart, nó có thể submit lại; idempotency F06 trả run đã lưu. Lỗi hoặc file thiếu được thử lại ở lần kiểm tra sau. SIGTERM/SIGINT dừng vòng lặp sau lần xử lý hiện tại.
+6. Scheduler chỉ nhớ scope/date sau khi poll được `COMPLETED`. Sau restart, nó có thể submit lại; idempotency F06 trả run đã lưu. Lỗi hoặc file thiếu được thử lại ở lần kiểm tra sau. SIGTERM/SIGINT dừng vòng lặp sau lần xử lý hiện tại.
 
 Bản hiện tại chỉ xét business date của ngày địa phương đang chạy, chưa tự backfill
 ngày bị bỏ lỡ khi scheduler dừng qua ngày. Watchdog F10B dùng để phát hiện trường
@@ -167,6 +170,7 @@ Nếu scheduler chết hẳn, nó không thể tự báo mình bỏ lỡ lịch.
 | Method | Endpoint | Description |
 |---|---|---|
 | POST | `/reconciliation-runs` | Manual trigger; dùng cùng command với scheduler. |
+| GET | `/reconciliation-runs?run_id={run_id}` | Scheduler poll metadata bằng endpoint danh sách hiện có. |
 | GET | `/health/live` | Process liveness `[Need Confirm]`. |
 | GET | `/health/ready` | Dependency readiness `[Need Confirm]`. |
 

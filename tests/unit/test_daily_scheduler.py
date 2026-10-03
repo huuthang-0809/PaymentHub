@@ -1,7 +1,9 @@
 import json
 from datetime import UTC, date, datetime
+from uuid import UUID
 import pytest
 
+from reconciliation.adapters import daily_scheduler
 from reconciliation.adapters.daily_scheduler import (
     DailyReconciliationScheduler,
     HttpReconciliationSubmitter,
@@ -76,3 +78,54 @@ def test_schedule_does_not_run_before_local_run_time(tmp_path) -> None:
 def test_invalid_schedule_configuration_is_rejected(raw) -> None:
     with pytest.raises(ValueError, match="Invalid RECON_SCHEDULES_JSON"):
         load_schedules(raw)
+
+
+class JsonResponse:
+    def __init__(self, payload: dict) -> None:
+        self.payload = json.dumps(payload).encode()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return None
+
+    def read(self) -> bytes:
+        return self.payload
+
+
+def test_http_submitter_accepts_then_polls_until_completed(
+    tmp_path, monkeypatch
+) -> None:
+    run_id = UUID("00000000-0000-0000-0000-000000000001")
+    responses = iter([
+        JsonResponse({
+            "run_id": str(run_id),
+            "status": "PENDING",
+        }),
+        JsonResponse({"items": [{"run_id": str(run_id), "status": "PENDING"}]}),
+        JsonResponse({"items": [{"run_id": str(run_id), "status": "RUNNING"}]}),
+        JsonResponse({"items": [{"run_id": str(run_id), "status": "COMPLETED"}]}),
+    ])
+    requests = []
+
+    def open_request(request, *, timeout):
+        requests.append((request, timeout))
+        return next(responses)
+
+    monkeypatch.setattr(daily_scheduler, "urlopen", open_request)
+    monkeypatch.setattr(daily_scheduler.clock, "sleep", lambda _: None)
+    statement = tmp_path / "onepay.csv"
+    statement.write_text("provider,region\n", encoding="utf-8")
+    schedule = load_schedules(SCHEDULES)[0]
+
+    HttpReconciliationSubmitter(
+        "http://api:8000", poll_interval_seconds=0.01
+    )(schedule, date(2026, 10, 2), statement)
+
+    assert requests[0][0].get_method() == "POST"
+    assert all(request.get_method() == "GET" for request, _ in requests[1:])
+    assert all(
+        f"run_id={run_id}" in request.full_url for request, _ in requests[1:]
+    )
+    assert all(timeout == 30 for _, timeout in requests)

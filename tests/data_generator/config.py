@@ -1,6 +1,8 @@
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal
+from functools import lru_cache
+from zoneinfo import ZoneInfo
 
 from canonical.adapters.asia import AsiaMapping
 from canonical.adapters.vn import VNMapping
@@ -71,14 +73,6 @@ class GeneratorConfig:
     def batch_id(self) -> str:
         return f"seed-{self.seed}"
 
-    @property
-    def base_time(self) -> datetime:
-        parsed = datetime.strptime(str(self.seed), "%Y%m%d")
-        # The seed labels the business date/file. With the shared 02:00 local
-        # cutoff, transactions for that period occur on the previous UTC day.
-        return parsed.replace(tzinfo=UTC) - timedelta(days=1)
-
-
 @dataclass(frozen=True, slots=True)
 class ScopeSpec:
     database: str
@@ -88,6 +82,7 @@ class ScopeSpec:
     provider: str
     currency: str
     slug: str
+    business_timezone: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,6 +118,7 @@ def scope_specs(config: GeneratorConfig) -> tuple[ScopeSpec, ...]:
             "ONEPAY",
             "VND",
             "vn",
+            "Asia/Ho_Chi_Minh",
         ),
         ScopeSpec(
             DATABASE_ASIA_ID,
@@ -132,6 +128,7 @@ def scope_specs(config: GeneratorConfig) -> tuple[ScopeSpec, ...]:
             "ESPAY",
             "IDR",
             "asia-id",
+            "Asia/Jakarta",
         ),
         ScopeSpec(
             DATABASE_ASIA_PH,
@@ -141,6 +138,7 @@ def scope_specs(config: GeneratorConfig) -> tuple[ScopeSpec, ...]:
             "2C2P",
             "PHP",
             "asia-ph",
+            "Asia/Manila",
         ),
         ScopeSpec(
             DATABASE_INDIA,
@@ -150,8 +148,28 @@ def scope_specs(config: GeneratorConfig) -> tuple[ScopeSpec, ...]:
             "RAZORPAY",
             "INR",
             "india",
+            "Asia/Kolkata",
         ),
     )
+
+
+def scope_document_count(config: GeneratorConfig, scope: ScopeSpec) -> int:
+    if scope.region is not Region.ASIA:
+        return config.records_per_region
+    if scope.tenant_id == "asia-id":
+        return (config.records_per_region + 1) // 2
+    return config.records_per_region // 2
+
+
+@lru_cache(maxsize=None)
+def scope_period(config: GeneratorConfig, scope: ScopeSpec) -> tuple[datetime, datetime]:
+    business_date = datetime.strptime(str(config.seed), "%Y%m%d").date()
+    timezone = ZoneInfo(scope.business_timezone)
+    start = datetime.combine(
+        business_date - timedelta(days=1), time(2), timezone
+    ).astimezone(UTC)
+    end = datetime.combine(business_date, time(2), timezone).astimezone(UTC)
+    return start, end
 
 
 def base_case(config: GeneratorConfig, scope: ScopeSpec, index: int) -> BaseCase:
@@ -175,6 +193,13 @@ def base_case(config: GeneratorConfig, scope: ScopeSpec, index: int) -> BaseCase
             f"{scope.provider.lower()}-{config.seed}-{parent_index:06d}"
         )
 
+    start, end = scope_period(config, scope)
+    count = scope_document_count(config, scope)
+    period_microseconds = int((end - start).total_seconds() * 1_000_000)
+    transaction_time = start + timedelta(
+        microseconds=index * period_microseconds // count
+    )
+
     return BaseCase(
         scope=scope,
         index=index,
@@ -191,7 +216,7 @@ def base_case(config: GeneratorConfig, scope: ScopeSpec, index: int) -> BaseCase
         merchant_id=f"{scope.slug}-merchant-{config.seed}-{index:06d}",
         amount_minor=100_000 + index,
         txn_type=txn_type,
-        transaction_time=config.base_time + timedelta(seconds=index),
+        transaction_time=transaction_time,
     )
 
 

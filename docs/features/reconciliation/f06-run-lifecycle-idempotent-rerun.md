@@ -42,13 +42,15 @@ sequenceDiagram
     participant PG as PostgreSQL
 
     Caller->>API: Submit statement and scope
-    API->>Orch: Execute reconciliation
+    API->>Repo: Enqueue durable PENDING run
+    API-->>Caller: 202 Accepted + run_id
+    API->>Orch: Execute reconciliation in background
     Orch->>Repo: Claim run using statement bytes
     Repo->>Repo: Compute SHA-256 and input key
     Repo->>PG: Try advisory lock for input key
     alt Lock is held by another request
-        Repo-->>API: RunInProgress
-        API-->>Caller: 409 Conflict
+        Repo-->>Orch: RunInProgress for duplicate worker
+        Note over Caller,API: Caller continues polling the effective run_id
     else Lock acquired
         Repo->>PG: Look up date, provider and checksum
         alt Request scope differs from stored run
@@ -57,9 +59,8 @@ sequenceDiagram
         else Scope is valid
             alt Existing COMPLETED run
                 Repo->>PG: Read stored metrics and results
-                Repo-->>Orch: Existing run and result
-                Orch-->>API: Return stored output without matching
-                API-->>Caller: 201 with same run and job IDs
+                Repo-->>Orch: Existing run summary
+                Note over Caller,API: Poll status returns COMPLETED
             else New or recoverable run
                 Repo->>PG: Commit RUNNING metadata
                 Repo-->>Orch: Claimed run and job IDs
@@ -67,8 +68,7 @@ sequenceDiagram
                 alt Processing succeeds
                     Orch->>Repo: Complete run with provider rows and results
                     Repo->>PG: Commit details and COMPLETED atomically
-                    Orch-->>API: Completed output
-                    API-->>Caller: 201 Created
+                    Note over Caller,API: Poll status returns COMPLETED
                 else Processing fails
                     Repo->>PG: Roll back any partial detail write
                     Orch->>Repo: Record failure
@@ -85,7 +85,7 @@ sequenceDiagram
 
 1. Sau kiểm tra file rỗng và chuẩn hóa provider, repository tính SHA-256 từ bytes trước khi parse/đọc Mongo/matching. Key gồm business date, provider và checksum.
 2. Lấy session advisory lock không chờ trên chính key đó. Owner ghi `RUNNING` rồi commit metadata trước processing; request đồng thời nhận `409`, không tạo run khác.
-3. Nếu đã `COMPLETED`, nạp metrics/results từ PostgreSQL và trả nguyên IDs, counts, summary và details đã lưu; không parse hoặc match lại. Response POST vẫn là `201` để giữ contract hiện tại. Nếu request khai báo region/tenant khác metadata của run có cùng key, trả `422` để không trả nhầm dữ liệu.
+3. Nếu đã `COMPLETED`, trả lại cùng `run_id` mà không parse hoặc match lại. POST trả `202`; caller đọc status/summary/results qua query endpoints. Nếu request khai báo region/tenant khác metadata của run có cùng key, trả `422` để không trả nhầm dữ liệu.
 4. Nếu `FAILED` hoặc `RUNNING` không còn owner (worker chết, lock tự giải phóng khi connection đóng), claim lại cùng run/job IDs, không thêm attempt record. Sau khi thành công, detail rows và `COMPLETED` commit trong một transaction. Nếu lỗi, rollback detail và ghi `FAILED` trong transaction riêng.
 5. Khóa được giải phóng khi context kết thúc hoặc connection mất. Cùng input không thể có hai owner sống; unique constraint là lớp bảo vệ bổ sung. Một request sau khi owner hoàn tất sẽ đọc kết quả cũ.
 
@@ -109,7 +109,7 @@ sequenceDiagram
 
 - Request giữ statement, business date, region, tenant và provider.
 - Response phải trả cùng `run_id` hoặc cùng persisted result khi exact rerun.
-- Completed replay trả `201` như request mới (giữ tương thích response hiện tại); request trùng đang chạy trả `409 Conflict`. API hiện chưa trả `run_id` trong body lỗi; có thể bổ sung khi có status/query API F08.
+- Request mới hoặc replay trả `202` với effective `run_id`; trạng thái được poll qua endpoint danh sách `/reconciliation-runs?run_id={run_id}`.
 - Không thêm retry endpoint trong scope hiện tại.
 
 ### Database

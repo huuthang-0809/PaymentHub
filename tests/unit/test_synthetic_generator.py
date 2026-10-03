@@ -22,7 +22,10 @@ from tests.data_generator.generator import (
     VN_MAPPING,
     generate_dataset,
     generate_provider_statements,
+    write_streaming_ground_truth,
 )
+from tests.data_generator.config import base_case, scope_document_count, scope_specs
+from tests.data_generator.oracle import write_provider_statement
 
 
 def test_generator_is_deterministic() -> None:
@@ -189,6 +192,21 @@ def test_provider_statements_fit_their_business_date_period() -> None:
         ), filename
 
 
+def test_large_dataset_stays_inside_each_business_period() -> None:
+    config = GeneratorConfig(seed=20261001, records_per_region=200_000)
+
+    for scope in scope_specs(config):
+        count = scope_document_count(config, scope)
+        period = resolve_business_period(
+            date(2026, 10, 1), scope.business_timezone, time(2)
+        )
+        first = base_case(config, scope, 0).transaction_time
+        last = base_case(config, scope, count - 1).transaction_time
+
+        assert period.start_utc == first
+        assert first <= last < period.end_utc
+
+
 def test_provider_statements_do_not_depend_on_canonical_adapter_output() -> None:
     config = GeneratorConfig(seed=20260923, records_per_region=32)
     datasets, _ = generate_dataset(config)
@@ -199,6 +217,28 @@ def test_provider_statements_do_not_depend_on_canonical_adapter_output() -> None
     datasets[DATABASE_INDIA][0]["transactionId"] = "adapter-side-change"
 
     assert generate_provider_statements(datasets, config) == original
+
+
+def test_streaming_files_match_legacy_outputs(tmp_path) -> None:
+    config = GeneratorConfig(seed=20260923, records_per_region=32)
+    datasets, legacy_ground_truth = generate_dataset(config)
+    legacy_statements = generate_provider_statements(datasets, config)
+
+    ground_truth_path = tmp_path / "ground-truth.json"
+    write_streaming_ground_truth(ground_truth_path, config)
+    assert json.loads(ground_truth_path.read_text(encoding="utf-8")) == (
+        legacy_ground_truth
+    )
+
+    for scope in scope_specs(config):
+        statement_path = tmp_path / scope.filename
+        row_count = write_provider_statement(
+            statement_path, config, scope, len(datasets[scope.database])
+        )
+        assert statement_path.read_text(encoding="utf-8") == (
+            legacy_statements[scope.filename]
+        )
+        assert row_count == len(statement_path.read_text().splitlines()) - 1
 
 
 def test_generated_provider_statements_match_the_exact_oracle() -> None:

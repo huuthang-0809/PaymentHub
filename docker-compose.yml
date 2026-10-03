@@ -21,6 +21,7 @@ services:
   mongodb:
     image: mongo:7
     container_name: paymenthub_mongo
+    command: ["mongod", "--wiredTigerCacheSizeGB", "0.5"]
     ports:
       - "27017:27017"
     volumes:
@@ -33,6 +34,7 @@ services:
       retries: 10
 
   generator:
+    profiles: ["seed"]
     build:
       context: .
       dockerfile: docker/test-data-generator.Dockerfile
@@ -67,11 +69,15 @@ services:
     environment:
       DATABASE_URL: postgresql://paymenthub:${POSTGRES_PASSWORD:-paymenthub}@postgres:5432/paymenthub
       MONGO_URI: mongodb://mongodb:27017
+      RECON_WORKER_COUNT: ${RECON_WORKER_COUNT:-1}
     ports:
       - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
     depends_on:
-      generator:
-        condition: service_completed_successfully
       mongodb:
         condition: service_healthy
       migrate:
@@ -89,15 +95,21 @@ services:
       RECON_SCHEDULER_POLL_SECONDS: ${RECON_SCHEDULER_POLL_SECONDS:-60}
       RECON_SCHEDULER_METRICS_PORT: 9101
       RECON_SCHEDULES_JSON: ${RECON_SCHEDULES_JSON:-[]}
+      RECON_API_TIMEOUT_SECONDS: ${RECON_API_TIMEOUT_SECONDS:-30}
+      RECON_STATUS_POLL_SECONDS: ${RECON_STATUS_POLL_SECONDS:-1}
+      RECON_STATUS_TIMEOUT_SECONDS: ${RECON_STATUS_TIMEOUT_SECONDS:-3600}
+      RECON_SIMULATION_START_DATE: ${SIMULATION_START_DATE:-}
+      RECON_SIMULATION_DAYS: ${SIMULATION_DAYS:-1}
+      RECON_SIMULATION_SECONDS_PER_DAY: ${SIMULATION_SECONDS_PER_DAY:-2}
     expose:
       - "9101"
     volumes:
       - ${RECON_STATEMENT_DIR:-./tests/generated/provider-statements}:/statements:ro
     depends_on:
       api:
-        condition: service_started
+        condition: service_healthy
 
-  month-simulation:
+  month-simulation-generate:
     profiles: ["simulation"]
     build:
       context: .
@@ -105,20 +117,20 @@ services:
     command: ["python", "-m", "tests.data_generator.month_simulation"]
     environment:
       MONGO_URI: mongodb://mongodb:27017
-      RECON_API_URL: http://api:8000
       SIMULATION_START_DATE: ${SIMULATION_START_DATE:-2026-09-01}
       SIMULATION_DAYS: ${SIMULATION_DAYS:-30}
-      SIMULATION_SECONDS_PER_DAY: ${SIMULATION_SECONDS_PER_DAY:-2}
       SIMULATION_MISSING_STATEMENT_COUNT: ${SIMULATION_MISSING_STATEMENT_COUNT:-2}
+      SIMULATION_WRITE_GROUND_TRUTH: ${SIMULATION_WRITE_GROUND_TRUTH:-false}
       RECORDS_PER_REGION: ${SIMULATION_RECORDS_PER_REGION:-100}
       SIMULATION_OUTPUT_DIR: /test-data/month-simulation
     depends_on:
-      api:
-        condition: service_started
+      mongodb:
+        condition: service_healthy
     volumes:
       - ./tests/generated:/test-data
 
   verify-data: # verify data insert into MongoDB with groundtruth.
+    profiles: ["seed"]
     build:
       context: .
       dockerfile: docker/test-data-generator.Dockerfile

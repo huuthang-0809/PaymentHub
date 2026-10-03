@@ -69,7 +69,12 @@ def test_financial_summary_survives_postgres_replay() -> None:
             )
         with _claim(repo, provider, region=Region.INDIA) as replay:
             assert replay.existing is not None
-            actual = build_financial_summary(replay.existing.results)
+            assert replay.existing.results == ()
+            from reconciliation.adapters.query import PostgreReconQuery
+
+            _, stored = PostgreReconQuery(connection).snapshot(replay.run_id)
+            assert stored is not None
+            actual = build_financial_summary(stored.results)
             assert actual == build_financial_summary(rows)
             assert actual.totals_by_currency[0].delta_amount_minor == 13000
             assert actual.refund_parent_metrics.refunded_transaction_rate == "1.000000"

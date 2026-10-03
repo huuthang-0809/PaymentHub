@@ -100,6 +100,8 @@ def test_summary_results_filter_and_cursor(setup_api):
         base + '/results', params={'cursor': non_numeric_cursor},
     ).status_code == 422
     assert client.get('/reconciliation-runs', params={'provider': 'razorpay'}).json()['items']
+    assert client.get('/reconciliation-runs', params={'run_id': str(run_id)}).json()['items']
+    assert client.get('/reconciliation-runs', params={'run_id': str(uuid4())}).json()['items'] == []
     assert client.get('/reconciliation-runs', params={'region': 'VN'}).json()['items'] == []
     assert client.get(f'/reconciliation-runs/{uuid4()}/summary').status_code == 404
     assert client.get('/reconciliation-runs/not-uuid/summary').status_code == 422

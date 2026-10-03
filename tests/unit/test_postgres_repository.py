@@ -7,6 +7,7 @@ from uuid import UUID
 import pytest
 
 from reconciliation.adapters import PostgreReconRepository
+from reconciliation.adapters.postgres import INSERT_BATCH_SIZE
 from reconciliation.application.ports import RunClaim
 from reconciliation.domain import (
     ProviderTransaction,
@@ -140,6 +141,36 @@ def test_claim_persists_checksum_timezone_scope_and_complete_lineage() -> None:
     )
     assert transaction.__enter__.call_count == 3
     assert transaction.__exit__.call_count == 3
+
+def test_enqueue_completed_input_reuses_existing_run_without_starting() -> None:
+    connection, _, cursor = _connection()
+    existing_run_id = UUID("00000000-0000-0000-0000-000000000003")
+    existing_job_id = UUID("00000000-0000-0000-0000-000000000004")
+    cursor.fetchone.return_value = (
+        existing_run_id,
+        existing_job_id,
+        "COMPLETED",
+        "ASIA",
+        "asia-id",
+        "Asia/Jakarta",
+        time(2),
+    )
+
+    submission = PostgreReconRepository(connection).enqueue_run(
+        run_id=RUN_ID,
+        business_date=date(2026, 9, 22),
+        region=Region.ASIA,
+        tenant_id="asia-id",
+        provider="ESPAY",
+        statement=Path("espay.csv"),
+        statement_content=STATEMENT_CONTENT,
+        business_timezone="Asia/Jakarta",
+        cutoff_time=time(2),
+    )
+
+    assert submission.run_id == existing_run_id
+    assert submission.should_start is False
+    assert cursor.execute.call_count == 2
 
 
 def test_complete_run_rolls_back_detail_failure() -> None:

@@ -1,42 +1,26 @@
 from datetime import date, time
 from io import BytesIO
-from types import SimpleNamespace
 from uuid import UUID
 
 from fastapi import FastAPI
-from fastapi import HTTPException
-import pytest
+from fastapi.testclient import TestClient
 from starlette.datastructures import UploadFile
 from starlette.requests import Request
 
-from reconciliation.adapters.http import create_reconciliation_run
-from reconciliation.application import RunInProgress
-from reconciliation.application.summary import build_financial_summary
-from reconciliation.domain import ReconResult, ReconResultType
+from reconciliation.adapters.http import create_reconciliation_run, router
 from shared_kernel import Region
 
 
 def test_create_reconciliation_run_forwards_uploaded_statement() -> None:
     received: dict[str, object] = {}
-    financial = build_financial_summary([ReconResult(
-        run_id="run", result_type=ReconResultType.MISSING_IN_PROVIDER,
-        region=Region.VN, tenant_id=None, provider="ONEPAY",
-        system_txn_id="missing", system_amount_minor=50, system_currency="VND",
-    )])
+    accepted_run_id = UUID("00000000-0000-0000-0000-000000000001")
 
-    def run_reconciliation(**values):
+    def submit_reconciliation(**values):
         received.update(values)
-        return SimpleNamespace(
-            run_id=UUID("00000000-0000-0000-0000-000000000001"),
-            job_run_id=UUID("00000000-0000-0000-0000-000000000002"),
-            system_rows=3,
-            provider_rows=2,
-            summary={"MATCHED": 2, "MISSING_IN_PROVIDER": 1},
-            financial_summary=financial,
-        )
+        return accepted_run_id
 
     app = FastAPI()
-    app.state.run_reconciliation = run_reconciliation
+    app.state.submit_reconciliation = submit_reconciliation
     request = Request({"type": "http", "app": app})
     statement = UploadFile(filename="onepay.csv", file=BytesIO(b"csv-content"))
 
@@ -51,41 +35,34 @@ def test_create_reconciliation_run_forwards_uploaded_statement() -> None:
         tenant_id=None,
     )
 
-    assert response.summary == {
-        "MATCHED": 2,
-        "MISSING_IN_PROVIDER": 1,
-    }
     body = response.model_dump(mode="json")
-    breakdown = body["financial_summary"]["breakdowns"][0]
-    assert breakdown["region"] == "VN"
-    assert breakdown["result"] == "MISSING_IN_PROVIDER"
-    assert breakdown["system_count"] == 1
-    assert breakdown["provider_count"] == 0
-    assert body["financial_summary"]["refunds_by_currency"] == []
+    assert body["run_id"] == str(accepted_run_id)
+    assert body["status"] == "PENDING"
     assert received["statement_content"] == b"csv-content"
     assert received["business_timezone"] == "Asia/Ho_Chi_Minh"
     assert received["cutoff_time"] == time(2)
     assert str(received["statement"]) == "onepay.csv"
-    body = response.model_dump(mode="json")
-    assert body["financial_summary"]["totals_by_currency"][0]["delta_amount_minor"] == 50
-    assert body["financial_summary"]["refund_parent_metrics"]["refunded_transaction_rate"] is None
+    assert isinstance(received["run_id"], UUID)
 
 
-def test_concurrent_same_input_returns_conflict() -> None:
+def test_http_endpoint_returns_accepted_immediately() -> None:
+    run_id = UUID("00000000-0000-0000-0000-000000000001")
     app = FastAPI()
+    app.include_router(router)
+    app.state.submit_reconciliation = lambda **_: run_id
 
-    def in_progress(**values):
-        raise RunInProgress("Identical reconciliation input is running")
+    response = TestClient(app).post(
+        "/reconciliation-runs",
+        data={
+            "business_date": "2026-09-22",
+            "region": "VN",
+            "provider": "ONEPAY",
+            "business_timezone": "Asia/Ho_Chi_Minh",
+            "cutoff_time": "02:00:00",
+        },
+        files={"statement": ("onepay.csv", b"csv-content", "text/csv")},
+    )
 
-    app.state.run_reconciliation = in_progress
-    request = Request({"type": "http", "app": app})
-    statement = UploadFile(filename="onepay.csv", file=BytesIO(b"csv-content"))
-
-    with pytest.raises(HTTPException) as error:
-        create_reconciliation_run(
-            request=request, statement=statement,
-            business_date=date(2026, 9, 22), region=Region.VN,
-            provider="ONEPAY", business_timezone="Asia/Ho_Chi_Minh",
-            cutoff_time=time(2), tenant_id=None,
-        )
-    assert error.value.status_code == 409
+    assert response.status_code == 202
+    assert response.json()["run_id"] == str(run_id)
+    assert response.json()["status"] == "PENDING"

@@ -134,3 +134,62 @@ def test_provider_reference_is_only_used_for_asia() -> None:
         ReconResultType.MISSING_IN_PROVIDER,
         ReconResultType.MISSING_IN_SYSTEM,
     }
+
+
+def test_exact_index_preserves_provider_order() -> None:
+    systems = [
+        system_transaction(
+            txn_id=f"system-{index}",
+            provider_txn_id=f"system-provider-{index}",
+            provider_ref_id=f"system-reference-{index}",
+            merchant_ref="shared-merchant-reference",
+        )
+        for index in range(2)
+    ]
+    providers = [
+        provider_transaction(
+            provider_txn_id=f"statement-provider-{index}",
+            provider_ref_id=f"statement-reference-{index}",
+            merchant_ref="shared-merchant-reference",
+            source_row_number=index + 10,
+        )
+        for index in range(2)
+    ]
+
+    results = MatchingEngine().match("run-1", providers, systems)
+
+    assert [result.source_row_number for result in results] == [10, 11]
+    assert all(result.result_type is ReconResultType.MATCHED for result in results)
+
+
+def test_fuzzy_index_preserves_first_provider_for_equal_time_distance() -> None:
+    system = system_transaction(
+        provider_txn_id="system-provider",
+        provider_ref_id="system-reference",
+        merchant_ref="system-merchant-reference",
+    )
+    providers = [
+        provider_transaction(
+            provider_txn_id="provider-later",
+            provider_ref_id="reference-later",
+            merchant_ref="merchant-reference-later",
+            transaction_time=NOW + timedelta(seconds=10),
+            source_row_number=20,
+        ),
+        provider_transaction(
+            provider_txn_id="provider-earlier",
+            provider_ref_id="reference-earlier",
+            merchant_ref="merchant-reference-earlier",
+            transaction_time=NOW - timedelta(seconds=10),
+            source_row_number=21,
+        ),
+    ]
+
+    results = MatchingEngine().match("run-1", providers, [system])
+
+    fuzzy = next(
+        result
+        for result in results
+        if result.result_type is ReconResultType.FUZZY_MATCHED
+    )
+    assert fuzzy.source_row_number == 20
