@@ -1,7 +1,9 @@
 import csv
 from collections import Counter
+from collections.abc import Iterator
 from datetime import timedelta
 from io import StringIO
+from pathlib import Path
 from typing import Any
 
 from shared_kernel import Region, TxnType
@@ -310,6 +312,98 @@ def _build_scope_fixtures(
         if fixture_id is not None:
             result["source_row_number"] = row_numbers[fixture_id]
     return rows, expected
+
+
+def _iter_scope_fixture_groups(
+    config: GeneratorConfig, scope: ScopeSpec, document_count: int
+) -> Iterator[tuple[list[ProviderFixtureRow], list[dict[str, Any]]]]:
+    """Yield the fixtures for one source document without retaining the scope."""
+    system_only = {
+        "missing-in-provider": (
+            "MISSING_IN_PROVIDER",
+            "No eligible provider counterpart found",
+        ),
+        "not-reconcilable": (
+            "NOT_RECONCILABLE",
+            "Transaction is outside reconciliation scope",
+        ),
+        "invalid-data": ("INVALID_DATA", "amount_status=INVALID"),
+    }
+
+    for index in range(document_count):
+        case = base_case(config, scope, index)
+        if case.mutation in system_only:
+            result_type, reason = system_only[case.mutation]
+            rows: list[ProviderFixtureRow] = []
+            expected = [_expected_system_only(case, result_type, reason)]
+        else:
+            rows, expected = _paired_fixture(case)
+
+        if index % len(MUTATION_CYCLE) == len(MUTATION_CYCLE) - 1:
+            provider_row, provider_result = _provider_only_fixture(
+                config, scope, index // len(MUTATION_CYCLE)
+            )
+            rows.append(provider_row)
+            expected.append(provider_result)
+        yield rows, expected
+
+
+def iter_scope_provider_rows(
+    config: GeneratorConfig, scope: ScopeSpec, document_count: int
+) -> Iterator[ProviderFixtureRow]:
+    for rows, _ in _iter_scope_fixture_groups(config, scope, document_count):
+        yield from rows
+
+
+def iter_scope_expected_results(
+    config: GeneratorConfig, scope: ScopeSpec, document_count: int
+) -> Iterator[dict[str, Any]]:
+    """Yield exact oracle results while assigning CSV row numbers incrementally."""
+    next_row_number = 2
+    for rows, expected in _iter_scope_fixture_groups(config, scope, document_count):
+        row_numbers = {
+            row.fixture_id: next_row_number + offset
+            for offset, row in enumerate(rows)
+        }
+        next_row_number += len(rows)
+        for original in expected:
+            result = dict(original)
+            fixture_id = result.pop("_provider_fixture_id", None)
+            if fixture_id is not None:
+                result["source_row_number"] = row_numbers[fixture_id]
+            yield result
+
+
+def write_provider_statement(
+    path: Path,
+    config: GeneratorConfig,
+    scope: ScopeSpec,
+    document_count: int,
+) -> int:
+    """Write a provider statement without constructing the CSV in memory."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    row_count = 0
+    with path.open("w", encoding="utf-8", newline="") as output:
+        writer = csv.DictWriter(
+            output, fieldnames=STATEMENT_COLUMNS, lineterminator="\n"
+        )
+        writer.writeheader()
+        for row in iter_scope_provider_rows(config, scope, document_count):
+            writer.writerow(row.values)
+            row_count += 1
+    return row_count
+
+
+def scope_oracle_summary(
+    config: GeneratorConfig, scope: ScopeSpec, document_count: int
+) -> tuple[int, dict[str, int]]:
+    provider_rows = 0
+    summary: Counter[str] = Counter()
+    for result in iter_scope_expected_results(config, scope, document_count):
+        summary[result["result_type"]] += 1
+        if result["source_row_number"] is not None:
+            provider_rows = max(provider_rows, result["source_row_number"] - 1)
+    return provider_rows, dict(sorted(summary.items()))
 
 
 def _statement_csv(rows: list[ProviderFixtureRow]) -> str:

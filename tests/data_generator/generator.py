@@ -1,10 +1,14 @@
+import json
 from collections import Counter
+from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
 from canonical.adapters.asia import asia_to_canonical
 from canonical.adapters.india import india_to_canonical
 from canonical.adapters.vn import vn_to_canonical
 from canonical.domain import CanonicalTransaction
+from shared_kernel import Region
 
 from .config import (
     ASIA_MAPPING,
@@ -19,7 +23,12 @@ from .config import (
     base_case,
     scope_specs,
 )
-from .oracle import generate_provider_statements, reconciliation_outputs
+from .oracle import (
+    generate_provider_statements,
+    iter_scope_expected_results,
+    reconciliation_outputs,
+    scope_oracle_summary,
+)
 from .source_documents import asia_document, india_document, vn_document
 
 
@@ -111,6 +120,141 @@ def generate_dataset(
     return datasets, ground_truth
 
 
+def scope_document_count(config: GeneratorConfig, scope: ScopeSpec) -> int:
+    if scope.database in {DATABASE_ASIA_ID, DATABASE_ASIA_PH}:
+        if scope.database == DATABASE_ASIA_ID:
+            return (config.records_per_region + 1) // 2
+        return config.records_per_region // 2
+    return config.records_per_region
+
+
+def iter_scope_documents(
+    config: GeneratorConfig, scope: ScopeSpec
+) -> Iterator[dict[str, Any]]:
+    """Generate one source document at a time for a single reconciliation scope."""
+    count = scope_document_count(config, scope)
+    for index in range(count):
+        if scope.database == DATABASE_VN:
+            yield vn_document(config, index)
+        elif scope.database == DATABASE_INDIA:
+            yield india_document(config, index)
+        else:
+            if scope.tenant_id is None:
+                raise ValueError("Asia scope requires tenant_id")
+            yield asia_document(config, index, scope.tenant_id)
+
+
+def _streaming_canonical_summary(
+    config: GeneratorConfig, scope: ScopeSpec
+) -> dict[str, Any]:
+    by_status: Counter[str] = Counter()
+    by_type: Counter[str] = Counter()
+    by_amount_status: Counter[str] = Counter()
+    scenarios: Counter[str] = Counter()
+    total = 0
+    for index, document in enumerate(iter_scope_documents(config, scope)):
+        if scope.database == DATABASE_VN:
+            transaction = vn_to_canonical(document, VN_MAPPING)
+        elif scope.database == DATABASE_INDIA:
+            transaction = india_to_canonical(document)
+        else:
+            assert scope.tenant_id is not None
+            transaction = asia_to_canonical(document, scope.tenant_id, ASIA_MAPPING)
+        total += 1
+        by_status[transaction.status.value] += 1
+        by_type[transaction.txn_type.value] += 1
+        by_amount_status[transaction.amount_status.value] += 1
+        scenarios[base_case(config, scope, index).mutation] += 1
+    return {
+        "total": total,
+        "by_status": dict(sorted(by_status.items())),
+        "by_type": dict(sorted(by_type.items())),
+        "by_amount_status": dict(sorted(by_amount_status.items())),
+        "scenarios": dict(sorted(scenarios.items())),
+    }
+
+
+def write_streaming_ground_truth(
+    path: Path,
+    config: GeneratorConfig,
+    provider_statement_rows: dict[str, int] | None = None,
+) -> None:
+    """Write the exact oracle incrementally, including large expected result sets."""
+    scopes = scope_specs(config)
+    scope_summaries = {
+        scope.database: _streaming_canonical_summary(config, scope)
+        for scope in scopes
+    }
+    asia_summary: dict[str, Any] = {
+        "total": sum(
+            scope_summaries[scope.database]["total"]
+            for scope in scopes if scope.region is Region.ASIA
+        )
+    }
+    for key in ("by_status", "by_type", "by_amount_status", "scenarios"):
+        combined: Counter[str] = Counter()
+        for scope in scopes:
+            if scope.region is Region.ASIA:
+                combined.update(scope_summaries[scope.database][key])
+        asia_summary[key] = dict(sorted(combined.items()))
+
+    header = {
+        "seed": config.seed,
+        "batch_id": config.batch_id,
+        "records_per_region": config.records_per_region,
+        "collection": COLLECTION,
+        "expected_documents": {
+            "VN": config.records_per_region,
+            "ASIA": config.records_per_region,
+            "INDIA": config.records_per_region,
+        },
+        "canonical": {
+            "VN": scope_summaries[DATABASE_VN],
+            "ASIA": asia_summary,
+            "INDIA": scope_summaries[DATABASE_INDIA],
+        },
+    }
+    if provider_statement_rows is not None:
+        header["provider_statements"] = provider_statement_rows
+    path.parent.mkdir(parents=True, exist_ok=True)
+    encoded_header = json.dumps(header, indent=2, sort_keys=True)
+    with path.open("w", encoding="utf-8") as output:
+        output.write(encoded_header[:-2])
+        output.write(',\n  "reconciliation": {\n')
+        for scope_index, scope in enumerate(scopes):
+            count = scope_document_count(config, scope)
+            provider_rows, expected_summary = scope_oracle_summary(
+                config, scope, count
+            )
+            if scope_index:
+                output.write(",\n")
+            output.write(f"    {json.dumps(scope.filename)}: {{\n")
+            output.write(
+                '      "scope": '
+                + json.dumps({
+                    "region": scope.region.value,
+                    "tenant_id": scope.tenant_id,
+                    "provider": scope.provider,
+                }, sort_keys=True)
+                + ",\n"
+            )
+            output.write(f'      "system_rows": {count},\n')
+            output.write(f'      "provider_rows": {provider_rows},\n')
+            output.write(
+                '      "expected_summary": '
+                + json.dumps(expected_summary, sort_keys=True)
+                + ',\n      "expected_results": [\n'
+            )
+            for result_index, result in enumerate(
+                iter_scope_expected_results(config, scope, count)
+            ):
+                if result_index:
+                    output.write(",\n")
+                output.write("        " + json.dumps(result, sort_keys=True))
+            output.write("\n      ]\n    }")
+        output.write("\n  }\n}\n")
+
+
 __all__ = [
     "ASIA_MAPPING",
     "COLLECTION",
@@ -122,4 +266,7 @@ __all__ = [
     "VN_MAPPING",
     "generate_dataset",
     "generate_provider_statements",
+    "iter_scope_documents",
+    "scope_document_count",
+    "write_streaming_ground_truth",
 ]
