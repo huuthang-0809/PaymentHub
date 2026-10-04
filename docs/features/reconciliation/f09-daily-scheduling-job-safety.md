@@ -120,6 +120,7 @@ hợp đó trước khi bổ sung chính sách backfill.
     "business_timezone": "Asia/Ho_Chi_Minh",
     "cutoff_time": "02:00",
     "run_time": "03:00",
+    "freshness_sla_seconds": 300,
     "filename": "onepay_{business_date_compact}.csv"
   }
 ]
@@ -128,7 +129,8 @@ hợp đó trước khi bổ sung chính sách backfill.
 Đặt JSON trên vào `RECON_SCHEDULES_JSON`. `filename` hỗ trợ
 `{business_date}` (`2026-10-02`), `{business_date_compact}` (`20261002`),
 `{provider}` và `{tenant_id}`. `run_time` phải bằng hoặc sau `cutoff_time` vì
-business date chỉ hoàn tất tại cutoff. Chạy local bằng:
+business date chỉ hoàn tất tại cutoff. `freshness_sla_seconds` mặc định là 300
+giây nếu không cấu hình. Chạy local bằng:
 
 ```bash
 docker compose --profile scheduler up

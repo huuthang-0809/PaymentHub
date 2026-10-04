@@ -23,6 +23,8 @@ class DailySchedule:
     cutoff_time: time
     run_time: time
     filename: str
+    # Grace time after run_time before freshness becomes unhealthy.
+    freshness_sla_seconds: int = 300
 
     def statement_name(self, business_date: date) -> str:
         name = self.filename.format(
@@ -59,12 +61,16 @@ def load_schedules(raw: str) -> tuple[DailySchedule, ...]:
                 cutoff_time=time.fromisoformat(value["cutoff_time"]),
                 run_time=time.fromisoformat(value["run_time"]),
                 filename=str(value["filename"]),
+                freshness_sla_seconds=int(
+                    value.get("freshness_sla_seconds", 300)
+                ),
             )
             if (
                 not schedule.provider
                 or schedule.cutoff_time.tzinfo is not None
                 or schedule.run_time.tzinfo is not None
                 or schedule.run_time < schedule.cutoff_time
+                or schedule.freshness_sla_seconds < 0
             ):
                 raise ValueError
             schedule.statement_name(date(2000, 1, 2))
