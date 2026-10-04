@@ -40,4 +40,9 @@ class MongoVnSource:
                 }
             }
         )
-        return tuple(vn_to_canonical(document, self.mapping) for document in cursor)
+        # Reconciliation only needs normalized fields. Keeping each Mongo
+        # document in `raw` would retain hundreds of thousands of dictionaries.
+        return tuple(
+            vn_to_canonical(document, self.mapping, include_raw=False)
+            for document in cursor
+        )

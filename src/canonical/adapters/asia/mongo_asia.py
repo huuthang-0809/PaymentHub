@@ -101,6 +101,8 @@ def asia_to_canonical(
     document: Mapping[str, Any],
     tenant_id: str,
     config: AsiaMapping | None = None,
+    *,
+    include_raw: bool = True,
 ) -> CanonicalTransaction:
     config = config or AsiaMapping()
     if tenant_id not in config.tenant_providers or tenant_id not in config.tenant_currencies:
@@ -192,5 +194,5 @@ def asia_to_canonical(
         callback_attempts=int(document.get("IsSentCallback") is True),
         is_deleted=document.get("IsDeleted") is True,
         is_test_data=_is_test_data(document, config),
-        raw=dict(document),
+        raw=dict(document) if include_raw else {},
     )
