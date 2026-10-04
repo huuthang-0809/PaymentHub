@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
@@ -26,6 +27,14 @@ from shared_kernel.enums import Instrument
 
 reconciliation_metrics = ReconciliationMetrics()
 logger = logging.getLogger(__name__)
+
+
+def _file_checksum(path: Path) -> str:
+    checksum = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            checksum.update(chunk)
+    return checksum.hexdigest()
 
 
 def _database_url() -> str:
@@ -158,29 +167,45 @@ async def lifespan(app: FastAPI):
             )
 
     def submit_reconciliation(**parameters) -> UUID:
+        statement_path = parameters.pop("statement_path")
         region = parameters["region"]
         tenant_id = parameters["tenant_id"]
-        with postgres_pool.connection() as connection:
-            repository = PostgreReconRepository(
-                connection,
-                business_timezone=_business_timezone_name(region, tenant_id),
-            )
-            submission = repository.enqueue_run(**parameters)
+        try:
+            with postgres_pool.connection() as connection:
+                repository = PostgreReconRepository(
+                    connection,
+                    business_timezone=_business_timezone_name(region, tenant_id),
+                )
+                submission = repository.enqueue_run(
+                    **parameters,
+                    statement_checksum=_file_checksum(statement_path),
+                )
 
-        if submission.should_start:
+            if not submission.should_start:
+                statement_path.unlink(missing_ok=True)
+                return submission.run_id
+
             job_parameters = dict(parameters, run_id=submission.run_id)
 
             def process() -> None:
                 try:
-                    run_reconciliation(**job_parameters)
+                    run_reconciliation(
+                        **job_parameters,
+                        statement_content=statement_path.read_bytes(),
+                    )
                 except Exception:
                     logger.exception(
                         "Background reconciliation failed",
                         extra={"run_id": str(submission.run_id)},
                     )
+                finally:
+                    statement_path.unlink(missing_ok=True)
 
             executor.submit(process)
-        return submission.run_id
+            return submission.run_id
+        except Exception:
+            statement_path.unlink(missing_ok=True)
+            raise
 
     app.state.query_reconciliation = QueryReconciliation(
         PooledReconQuery(postgres_pool), export_report,

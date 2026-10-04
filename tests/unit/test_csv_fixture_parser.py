@@ -38,6 +38,10 @@ def test_csv_fixture_can_feed_matching_engine() -> None:
     report = CsvFixtureParser().parse(CSV_FIXTURE.encode(), "provider_statement.csv")
     assert report.valid
     assert len(report.rows) == 3
+    assert all(row.raw == {} for row in report.rows)
+    raw_rows = list(report.raw_rows or ())
+    assert raw_rows[0]["provider_txn_id"] == "provider-1"
+    assert raw_rows[0]["amount_minor"] == "10000"
 
     system_rows = [
         system_transaction("system-1", "provider-1", 10_000, 0),
@@ -52,6 +56,7 @@ def test_csv_fixture_can_feed_matching_engine() -> None:
         ReconResultType.MISSING_IN_PROVIDER,
         ReconResultType.MISSING_IN_SYSTEM,
     ]
+    report.close()
 
 
 def test_csv_fixture_reports_validation_errors() -> None:

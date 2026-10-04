@@ -143,6 +143,16 @@ def test_pipeline_accepts_adapter_output_without_loading_mongo(tmp_path: Path) -
     assert repository.claimed["provider"] == "ONEPAY"
     assert repository.claimed["tenant_id"] is None
     assert len(repository.saved["results"]) == 1
+    assert repository.saved["financial_summary"]["totals_by_currency"][0] == {
+        "currency": "VND",
+        "system_amount_minor": 149000,
+        "provider_amount_minor": 149000,
+        "delta_amount_minor": 0,
+        "system_amount_count": 1,
+        "provider_amount_count": 1,
+        "system_missing_amount_count": 0,
+        "provider_missing_amount_count": 0,
+    }
     assert telemetry.runs[0]["outcome"] == "completed"
     assert telemetry.runs[0]["run_id"] == run_id
     assert telemetry.runs[0]["business_date"] == date(2026, 9, 22)

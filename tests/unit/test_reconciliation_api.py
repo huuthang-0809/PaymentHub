@@ -1,5 +1,6 @@
 from datetime import date, time
 from io import BytesIO
+from pathlib import Path
 from uuid import UUID
 
 from fastapi import FastAPI
@@ -38,7 +39,10 @@ def test_create_reconciliation_run_forwards_uploaded_statement() -> None:
     body = response.model_dump(mode="json")
     assert body["run_id"] == str(accepted_run_id)
     assert body["status"] == "PENDING"
-    assert received["statement_content"] == b"csv-content"
+    statement_path = received["statement_path"]
+    assert isinstance(statement_path, Path)
+    assert statement_path.read_bytes() == b"csv-content"
+    statement_path.unlink()
     assert received["business_timezone"] == "Asia/Ho_Chi_Minh"
     assert received["cutoff_time"] == time(2)
     assert str(received["statement"]) == "onepay.csv"
@@ -49,7 +53,11 @@ def test_http_endpoint_returns_accepted_immediately() -> None:
     run_id = UUID("00000000-0000-0000-0000-000000000001")
     app = FastAPI()
     app.include_router(router)
-    app.state.submit_reconciliation = lambda **_: run_id
+    def submit_reconciliation(**values):
+        values["statement_path"].unlink()
+        return run_id
+
+    app.state.submit_reconciliation = submit_reconciliation
 
     response = TestClient(app).post(
         "/reconciliation-runs",

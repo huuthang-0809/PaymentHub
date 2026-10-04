@@ -1,5 +1,8 @@
 import csv
-from io import StringIO
+import hashlib
+import json
+from io import BytesIO, TextIOWrapper
+from tempfile import TemporaryFile
 
 from reconciliation.application.ports import (
     ParseReport,
@@ -25,6 +28,27 @@ REQUIRED_COLUMNS = (
 )
 
 
+class JsonlRawRowStore:
+    """Disk-backed raw rows; only one decoded row is resident while iterating."""
+
+    def __init__(self, header: list[str]) -> None:
+        self._header = header
+        self._file = TemporaryFile(mode="w+t", encoding="utf-8", newline="")
+
+    def append(self, values: tuple[str, ...]) -> None:
+        self._file.write(json.dumps(values, ensure_ascii=False, separators=(",", ":")))
+        self._file.write("\n")
+
+    def __iter__(self):
+        self._file.flush()
+        self._file.seek(0)
+        for line in self._file:
+            yield dict(zip(self._header, json.loads(line), strict=True))
+
+    def close(self) -> None:
+        self._file.close()
+
+
 class RowError(ValueError):
     def __init__(self, code: ValidationCode, field: str | None, message: str) -> None:
         super().__init__(message)
@@ -40,8 +64,10 @@ class CsvFixtureParser:
     """Parser for the internal comma-separated provider fixture format."""
 
     def parse(self, content: bytes, source_file: str) -> ParseReport:
+        text = TextIOWrapper(BytesIO(content), encoding="utf-8-sig", newline="")
         try:
-            text = content.decode("utf-8-sig")
+            sample = "".join(text.readline() for _ in range(10))
+            text.seek(0)
         except UnicodeDecodeError as exc:
             return self._file_error(ValidationCode.INVALID_ENCODING, str(exc))
 
@@ -51,7 +77,6 @@ class CsvFixtureParser:
             )
 
         try:
-            sample = "\n".join(text.splitlines()[:10])
             dialect = csv.Sniffer().sniff(sample, delimiters=",;|\t") # Sniffer.sniff find out which delimiter character is actually being used.
         except csv.Error:
             return self._file_error(
@@ -62,7 +87,7 @@ class CsvFixtureParser:
                 ValidationCode.INVALID_DELIMITER, "fixture delimiter must be comma"
             )
 
-        csv_rows = csv.reader(StringIO(text), dialect)  #StringIO emulate string as a hidden file for csv.reader to read
+        csv_rows = csv.reader(text, dialect)
         header = next(csv_rows, [])                     # next return first line of csv_rows.
         missing = [column for column in REQUIRED_COLUMNS if column not in header]
         if missing:
@@ -73,48 +98,60 @@ class CsvFixtureParser:
 
         rows: list[ProviderTransaction] = []
         issues: list[ValidationIssue] = []
-        seen: set[tuple[str, ...]] = set()
+        seen: set[bytes] = set()
+        raw_rows = JsonlRawRowStore(header)
 
-        for row_number, values in enumerate(csv_rows, start=2):
-            clean_values = tuple(value.strip() for value in values)
-            if not clean_values or not any(clean_values):
-                issues.append(
-                    ValidationIssue(
-                        row_number, None, ValidationCode.EMPTY_ROW, "empty row"
+        try:
+            for row_number, values in enumerate(csv_rows, start=2):
+                clean_values = tuple(value.strip() for value in values)
+                if not clean_values or not any(clean_values):
+                    issues.append(
+                        ValidationIssue(
+                            row_number, None, ValidationCode.EMPTY_ROW, "empty row"
+                        )
                     )
-                )
-                continue
-            if len(clean_values) != len(header):
-                issues.append(
-                    ValidationIssue(
-                        row_number,
-                        None,
-                        ValidationCode.INVALID_TYPE,
-                        "column count does not match header",
+                    continue
+                if len(clean_values) != len(header):
+                    issues.append(
+                        ValidationIssue(
+                            row_number,
+                            None,
+                            ValidationCode.INVALID_TYPE,
+                            "column count does not match header",
+                        )
                     )
-                )
-                continue
-            if clean_values in seen:
-                issues.append(
-                    ValidationIssue(
-                        row_number,
-                        None,
-                        ValidationCode.DUPLICATE_ROW,
-                        "duplicate provider row",
+                    continue
+                fingerprint = hashlib.sha256(json.dumps(
+                    clean_values, ensure_ascii=False, separators=(",", ":"),
+                ).encode()).digest()
+                if fingerprint in seen:
+                    issues.append(
+                        ValidationIssue(
+                            row_number,
+                            None,
+                            ValidationCode.DUPLICATE_ROW,
+                            "duplicate provider row",
+                        )
                     )
-                )
-                continue
-            seen.add(clean_values)
-            raw = dict(zip(header, clean_values, strict=True))
+                    continue
+                seen.add(fingerprint)
+                raw = dict(zip(header, clean_values, strict=True))
 
-            try:
-                rows.append(self._to_transaction(raw, source_file, row_number))
-            except RowError as exc:
-                issues.append(
-                    ValidationIssue(row_number, exc.field, exc.code, str(exc))
-                )
+                try:
+                    rows.append(self._to_transaction(raw, source_file, row_number))
+                    raw_rows.append(clean_values)
+                except RowError as exc:
+                    issues.append(
+                        ValidationIssue(row_number, exc.field, exc.code, str(exc))
+                    )
+        except UnicodeDecodeError as exc:
+            raw_rows.close()
+            return self._file_error(ValidationCode.INVALID_ENCODING, str(exc))
 
-        return ParseReport(tuple(rows), tuple(issues))
+        if issues:
+            raw_rows.close()
+            return ParseReport(tuple(rows), tuple(issues))
+        return ParseReport(tuple(rows), (), raw_rows)
 
     @staticmethod
     def _to_transaction(
@@ -196,7 +233,7 @@ class CsvFixtureParser:
                 transaction_time=transaction_time,
                 source_file=source_file,
                 source_row_number=row_number,
-                raw=row,
+                raw={},
             )
         except (TypeError, ValueError) as exc:
             raise RowError(ValidationCode.INVALID_TYPE, None, str(exc)) from exc
