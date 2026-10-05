@@ -2,8 +2,8 @@
 
 Benchmark này so sánh hai mô hình trên cùng một fixture:
 
-- `*_before`: bảng thường, mô phỏng schema hiện tại.
-- `*_after`: `recon_result` và `provider_txn` partition theo ngày
+- `*_before`: bảng thường, mô phỏng schema trước partition.
+- `*_after`: schema từ migration `0008`, với `recon_result` và `provider_txn` partition theo ngày
   `business_date`, có index bắt đầu bằng `run_id` trong từng partition.
 - `recon_run` luôn là bảng thường.
 
@@ -18,9 +18,9 @@ nghiệp vụ đã áp dụng timezone/cutoff, không phải ngày insert hoặc
 | 1 | Trang chi tiết report của một run | Partition pruning + index `(run_id, result_type, result_key)` |
 | 2 | Báo cáo tổng hợp theo khoảng 7 ngày | Chỉ đọc 7 partition trong khoảng ngày |
 
-Query 1 phản ánh `PostgreReconQuery.results_page` hiện tại. Trong thiết kế
-partition, repository đọc `business_date` từ `recon_run` trước rồi thêm nó vào
-điều kiện truy vấn detail. Query 2 là query báo cáo theo kỳ dự kiến triển khai.
+Query 1 phản ánh `PostgreReconQuery.results_page`: repository đọc
+`business_date` từ `recon_run` rồi thêm nó vào điều kiện truy vấn detail.
+Query 2 là query báo cáo theo kỳ dự kiến triển khai.
 
 ## Chạy benchmark
 
@@ -51,12 +51,12 @@ Fixture mặc định gồm 30 ngày, 40 run/ngày và 1.000 provider/results m�
 được tính đúng và kế hoạch thực thi; kết luận hiệu năng cần dùng dữ liệu gần với
 production và cùng cấu hình PostgreSQL.
 
-## Điều kiện để áp dụng vào production
+## Thiết kế áp dụng trong migration `0008`
 
-Migration thật cần thêm `business_date NOT NULL` vào cả hai bảng detail, copy
-giá trị từ `recon_run`, và đưa partition key vào mọi `PRIMARY KEY`/`UNIQUE`
-constraint. Foreign key detail nên gồm `(run_id, job_run_id, business_date)` để
-DB ngăn một row bị gắn sai ngày của run.
+Migration thêm `business_date NOT NULL` vào cả hai bảng detail, copy giá trị từ
+`recon_run`, và đưa partition key vào mọi `PRIMARY KEY`/`UNIQUE` constraint.
+Foreign key detail gồm `(run_id, job_run_id, business_date)` để DB ngăn một row
+bị gắn sai ngày của run.
 
 Ứng dụng phải luôn truyền cả `business_date` và `run_id` khi đọc detail. Nếu chỉ
 lọc `run_id`, PostgreSQL không thể loại partition theo ngày ở planning time.

@@ -99,7 +99,9 @@ class PostgreReconRepository:
                          tenant_id, provider, str(statement), checksum,
                          self.business_timezone, time.min),
                     )
-                    claim = RunClaim(resolved_run_id, job_run_id)
+                    claim = RunClaim(
+                        resolved_run_id, job_run_id, business_date=business_date,
+                    )
                 else:
                     (resolved_run_id, job_run_id, current_status,
                      stored_region, stored_tenant_id) = row
@@ -111,7 +113,10 @@ class PostgreReconRepository:
                     if current_status == "COMPLETED":
                         claim = RunClaim(
                             resolved_run_id, job_run_id,
-                            self._load_completed(cursor, resolved_run_id, job_run_id),
+                            self._load_completed(
+                                cursor, resolved_run_id, job_run_id, business_date,
+                            ),
+                            business_date,
                         )
                     else:
                         # An available lock means no other live owner. Reuse the
@@ -133,7 +138,9 @@ class PostgreReconRepository:
                             """,
                             (job_run_id,),
                         )
-                        claim = RunClaim(resolved_run_id, job_run_id)
+                        claim = RunClaim(
+                            resolved_run_id, job_run_id, business_date=business_date,
+                        )
             yield claim
         finally:
             if locked:
@@ -141,7 +148,9 @@ class PostgreReconRepository:
                     cursor.execute("SELECT pg_advisory_unlock(%s)", (lock_key,))
 
     @staticmethod
-    def _load_completed(cursor, run_id: UUID, job_run_id: UUID) -> StoredRun:
+    def _load_completed(
+        cursor, run_id: UUID, job_run_id: UUID, business_date: date,
+    ) -> StoredRun:
         cursor.execute(
             "SELECT metrics FROM job_run_log WHERE job_run_id = %s",
             (job_run_id,),
@@ -155,9 +164,11 @@ class PostgreReconRepository:
                    refund_of, refunded_amount_minor,
                    provider_txn_id, provider_amount_minor, provider_currency,
                    delta_amount, source_file, source_row_number, reason
-            FROM recon_result WHERE run_id = %s ORDER BY result_key
+            FROM recon_result
+            WHERE business_date = %s AND run_id = %s
+            ORDER BY result_key
             """,
-            (run_id,),
+            (business_date, run_id),
         )
         results = tuple(
             ReconResult(
@@ -196,20 +207,37 @@ class PostgreReconRepository:
         summary = Counter(result.result_type.value for result in results)
 
         with self.connection.transaction(), self.connection.cursor() as cursor: #transaction: for begin a transaction and cursor: for execute SQL
+            business_date = claim.business_date
+            if business_date is None:
+                cursor.execute(
+                    "SELECT business_date FROM recon_run "
+                    "WHERE run_id = %s AND job_run_id = %s",
+                    (run_id, job_run_id),
+                )
+                row = cursor.fetchone()
+                if row is None:
+                    raise RuntimeError("Run metadata no longer exists")
+                business_date = row[0]
+            cursor.execute(
+                "SELECT ensure_reconciliation_day_partitions(%s)",
+                (business_date,),
+            )
             cursor.executemany(
                 """
                 INSERT INTO provider_txn (
-                    run_id, job_run_id, region, tenant_id, provider, txn_type,
+                    business_date, run_id, job_run_id, region, tenant_id,
+                    provider, txn_type,
                     provider_txn_id, provider_ref_id, merchant_ref, merchant_id,
                     amount_minor, currency, status, transaction_time,
                     source_file, source_row_number, raw
                 ) VALUES (
                     %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s, %s, %s
+                    %s, %s, %s, %s, %s, %s, %s, %s
                 )
                 """,
                 [
                     (
+                        business_date,
                         run_id,
                         job_run_id,
                         txn.region.value,
@@ -234,7 +262,8 @@ class PostgreReconRepository:
             cursor.executemany(
                 """
                 INSERT INTO recon_result (
-                    run_id, job_run_id, result_key, result_type, region,
+                    business_date, run_id, job_run_id, result_key,
+                    result_type, region,
                     tenant_id, provider, txn_type, system_txn_id,
                     system_provider_txn_id, system_status,
                     system_amount_minor, system_currency,
@@ -244,11 +273,12 @@ class PostgreReconRepository:
                 ) VALUES (
                     %s, %s, %s, %s, %s, %s, %s, %s, %s,
                     %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s
+                    %s, %s, %s, %s, %s
                 )
                 """,
                 [
                     (
+                        business_date,
                         run_id,
                         job_run_id,
                         index,

@@ -133,6 +133,11 @@ def test_pipeline_replay_and_failed_detail_transaction() -> None:
             "SELECT count(*) FROM recon_result WHERE run_id = %s",
             (output.run_id,),
         ).fetchone()[0] == 1
+        assert connection.execute(
+            "SELECT business_date, tableoid::regclass::text "
+            "FROM recon_result WHERE business_date = %s AND run_id = %s",
+            (date(2026, 9, 22), output.run_id),
+        ).fetchone() == (date(2026, 9, 22), "recon_result_20260922")
 
         # Duplicate source rows fail inside the detail transaction; no partial rows.
         with _claim(repo, provider + "X") as claim:

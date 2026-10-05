@@ -89,6 +89,7 @@ class RunClaim: # Run info that request is processing
     run_id: UUID
     job_run_id: UUID
     existing: StoredRun | None = None
+    business_date: date | None = None
 
 
 class RunInProgress(Exception): #409 Conflict

@@ -1,4 +1,4 @@
--- Final schema subset used by this benchmark after migrations 0001–0008.
+-- Historical pre-partition schema subset used to isolate the week 2 indexes.
 -- Dedicated schema; CREATE fails if it already exists. Always run in a transaction.
 CREATE SCHEMA bench_week2;
 SET LOCAL search_path TO bench_week2;

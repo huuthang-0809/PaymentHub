@@ -1,4 +1,4 @@
--- First database page for the filtered /results endpoint.
+-- Pre-partition database page shape measured by the week 2 index benchmark.
 -- Concrete values keep this file directly runnable by EXPLAIN and psql.
 SELECT result_key, run_id::text AS run_id,
        result_type, region, tenant_id, provider, txn_type,
