@@ -7,7 +7,7 @@
 | Feature | Freshness watchdog/API, data-quality findings và production alert policy |
 | Owner | `[TBD]` |
 | Ticket | `[TBD]` |
-| Status | `Partially implemented — freshness API đã có; persistence DQ, năm DQ rules và production thresholds chưa được triển khai` |
+| Status | `Partially implemented — freshness và DQ đã có; production thresholds/approval chưa được chốt` |
 | Purpose | Cho vận hành biết dữ liệu có mới, đủ và đúng hay không; dùng policy đã được Operations/Finance duyệt thay cho các ngưỡng demo của F10A. |
 
 ## 2. Requirements
@@ -73,20 +73,33 @@ sequenceDiagram
 
 ## 4. API & Data
 
-### API dự kiến
+### API
 
 | Method | Endpoint | Description |
 |---|---|---|
 | GET | `/_meta/freshness` | Freshness của mọi configured scope; hỗ trợ lọc `region`, `tenant_id`, `provider`. |
-| GET | `/internal/data-quality` | Query DQ findings; exact contract và authorization `[Need Confirm]`. |
+| GET | `/internal/data-quality` | Query theo run/date/scope/rule/status/severity; trả `data_as_of`. |
 
-### Database dự kiến
+### Database
 
 | Table / Collection | Nội dung |
 |---|---|
 | `dq_daily` | Date, scope, rule/version, severity, counts và affected references. |
 | Job/run history | Nguồn tính last success, consecutive failures và missing scheduled run. |
 | Production policy store | Threshold, SLA, sample size, effective dates và approval metadata `[Need Confirm]`. |
+
+### Năm DQ rules hiện tại
+
+| Rule | Recon result bị đánh dấu | Severity |
+|---|---|---|
+| `DUPLICATE_TRANSACTION` | `DUPLICATE` | `WARNING` |
+| `INVALID_DATA` | `INVALID_DATA` | `CRITICAL` |
+| `CURRENCY_MISMATCH` | `CURRENCY_MISMATCH` | `CRITICAL` |
+| `MISSING_IN_SYSTEM` | `MISSING_IN_SYSTEM` | `CRITICAL` |
+| `MISSING_IN_PROVIDER` | `MISSING_IN_PROVIDER` | `WARNING` |
+
+Mỗi run lưu đủ năm rule với trạng thái `PASSED` hoặc `FAILED`. References là
+`result_key` nội bộ kết hợp với `run_id`, không chứa raw payload hoặc PII.
 
 ## 5. Production Thresholds
 
@@ -128,7 +141,6 @@ Không có approval/config hợp lệ thì hệ thống không được âm th�
 
 | Question | Owner | Status |
 |---|---|---|
-| Năm data-quality rules cụ thể là gì? | Technical Lead/Finance | `[Need Confirm]` |
 | Threshold, minimum sample size và SLA chính thức? | Operations/Finance | `[Need Confirm]` |
 | Policy lưu trong config file hay database có version? | Technical Lead/Operations | `[Need Confirm]` |
 | Authorization và retention của DQ API/findings? | Security/Data Governance | `[Need Confirm]` |
@@ -138,3 +150,6 @@ Không có approval/config hợp lệ thì hệ thống không được âm th�
 - Evaluator và HTTP route: `src/reconciliation/adapters/freshness.py`.
 - Schedule và `freshness_sla_seconds`: `src/reconciliation/adapters/daily_scheduler.py`.
 - Unit tests: `tests/unit/test_freshness_api.py`.
+- DQ evaluator, persistence query và API: `src/reconciliation/adapters/data_quality.py`.
+- DQ schema: `migrations/versions/0009_dq_daily.py`.
+- DQ tests: `tests/unit/test_data_quality_api.py`, `tests/integration/test_run_lifecycle.py`.
