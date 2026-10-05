@@ -17,6 +17,10 @@ from canonical.adapters.asia import AsiaMapping, MongoAsiaSource
 from canonical.adapters.india import MongoIndiaSource
 from canonical.adapters.vn import MongoVnSource, VNMapping
 from reconciliation.adapters import CsvFixtureParser, PostgreReconRepository
+from reconciliation.adapters.data_quality import (
+    PostgreDataQualityStore,
+    PooledDataQualityQuery,
+)
 from reconciliation.adapters.metrics import ReconciliationMetrics
 from reconciliation.adapters.daily_scheduler import load_schedules
 from reconciliation.adapters.freshness import FreshnessService
@@ -151,6 +155,7 @@ def _run_reconciliation_job(parameters: dict, metrics_connection) -> None:
                     business_timezone=_business_timezone_name(region, tenant_id),
                 ),
                 _ProcessTelemetry(metrics_connection),
+                data_quality=PostgreDataQualityStore(connection).evaluate,
             ).execute(
                 **parameters,
                 statement_content=statement_path.read_bytes(),
@@ -262,6 +267,7 @@ async def lifespan(app: FastAPI):
         load_schedules(os.getenv("RECON_SCHEDULES_JSON", "[]")),
         PooledReconQuery(postgres_pool),
     )
+    app.state.data_quality = PooledDataQualityQuery(postgres_pool)
     app.state.delete_reconciliation_run = PooledReconRunDeleter(postgres_pool)
     app.state.submit_reconciliation = submit_reconciliation
     try:

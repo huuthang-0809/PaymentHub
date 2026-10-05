@@ -126,14 +126,14 @@ class MatchingEngine:
         unmatched_sys = []
 
         if currency_mismatch:
-            provider_index: dict[tuple, dict[str, deque[int]]] = defaultdict(
-                lambda: defaultdict(deque)
+            provider_index: dict[tuple, dict[str, deque[int]]] = defaultdict( # if tuple key not exist -> call lambda function inside
+                lambda: defaultdict(deque) # if key currency not exist -> return an empty deque
             )
             for index, provider_txn in enumerate(provider_txns):
                 identifier = getattr(provider_txn, key_name)
                 if identifier:
                     currency = self._scope(provider_txn)[3]
-                    provider_index[
+                    provider_index[ # create hash table
                         (self._identity_scope(provider_txn), identifier)
                     ][currency].append(index)
         else:
@@ -164,10 +164,10 @@ class MatchingEngine:
                 for currency, candidates in currency_queues.items():
                     if (
                         currency != system_currency
-                        and candidates
+                        and candidates # deque is not empty
                         and (
                             match_index is None
-                            or candidates[0] < match_index
+                            or candidates[0] < match_index # get first candidate with smallest index
                         )
                     ):
                         match_index = candidates[0]
@@ -229,10 +229,10 @@ class MatchingEngine:
             )
             candidates = provider_index.get(key, [])
             system_time = system_txn.created_at
-            lower_bound = bisect_left(
+            lower_bound = bisect_left( # binary search for Insertion point far left
                 candidates, (system_time - window, -1)
             )
-            upper_bound = bisect_right(
+            upper_bound = bisect_right( # binary search for Insertion point far right
                 candidates, (system_time + window, len(provider_txns))
             )
             match_index = None

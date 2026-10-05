@@ -1,6 +1,7 @@
 from collections import Counter
 from dataclasses import asdict, dataclass
 from datetime import date, time
+import logging
 from pathlib import Path
 from time import perf_counter
 from typing import Any, Callable
@@ -18,6 +19,10 @@ from .ports import (
 )
 from .summary import build_financial_summary
 from .calendar import classify_provider_rows, resolve_business_period
+
+
+# logging reports optional DQ failures without changing a committed run.
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,11 +46,13 @@ class RunMatching:
         parser: ProviderStatementParser,
         repository: ReconRepository,
         telemetry: ReconciliationTelemetry | None = None,
+        data_quality: Callable[[UUID], None] | None = None,
     ) -> None:
         self.system_source = system_source
         self.parser = parser
         self.repository = repository
         self.telemetry = telemetry
+        self.data_quality = data_quality
 
     def execute(
         self,
@@ -77,6 +84,15 @@ class RunMatching:
                 cutoff_time=cutoff_time,
                 run_id=run_id,
             )
+            if self.data_quality is not None:
+                try:
+                    # DQ runs only after the reconciliation transaction commits.
+                    self.data_quality(output.run_id)
+                except Exception:
+                    logger.exception(
+                        "Data-quality evaluation failed",
+                        extra={"run_id": str(output.run_id)},
+                    )
             outcome = "replayed" if output.replayed else "completed"
             return output
         except InvalidProviderStatement:
