@@ -1,4 +1,5 @@
 import json
+import threading
 from datetime import UTC, date, datetime
 from uuid import UUID
 import pytest
@@ -64,6 +65,59 @@ def test_schedule_does_not_run_before_local_run_time(tmp_path) -> None:
     )
     assert scheduler.run_due(datetime(2026, 10, 1, 19, 59, tzinfo=UTC)) == 0
     assert called == []
+
+
+def test_due_schedules_run_up_to_worker_count_in_parallel(tmp_path) -> None:
+    schedules = load_schedules(json.dumps([
+        {
+            "region": "VN",
+            "provider": "ONEPAY",
+            "business_timezone": "Asia/Ho_Chi_Minh",
+            "cutoff_time": "02:00",
+            "run_time": "03:00",
+            "filename": "onepay_{business_date_compact}.csv",
+        },
+        {
+            "region": "INDIA",
+            "provider": "RAZORPAY",
+            "business_timezone": "Asia/Kolkata",
+            "cutoff_time": "02:00",
+            "run_time": "03:00",
+            "filename": "razorpay_{business_date_compact}.csv",
+        },
+    ]))
+    (tmp_path / "onepay_20261002.csv").write_text("csv", encoding="utf-8")
+    (tmp_path / "razorpay_20261002.csv").write_text("csv", encoding="utf-8")
+    both_workers = threading.Barrier(2)
+    worker_threads = set()
+    lock = threading.Lock()
+
+    def submit(*_args) -> None:
+        with lock:
+            worker_threads.add(threading.get_ident())
+        both_workers.wait(timeout=2)
+
+    scheduler = DailyReconciliationScheduler(
+        tmp_path,
+        schedules,
+        submit,
+        lambda *_args: None,
+        worker_count=2,
+    )
+
+    assert scheduler.run_due(datetime(2026, 10, 2, 12, tzinfo=UTC)) == 2
+    assert len(worker_threads) == 2
+
+
+def test_scheduler_rejects_non_positive_worker_count(tmp_path) -> None:
+    with pytest.raises(ValueError, match="worker_count must be positive"):
+        DailyReconciliationScheduler(
+            tmp_path,
+            load_schedules(SCHEDULES),
+            lambda *_args: None,
+            lambda *_args: None,
+            worker_count=0,
+        )
 
 @pytest.mark.parametrize("raw", [
     "{}",

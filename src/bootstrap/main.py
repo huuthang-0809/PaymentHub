@@ -18,7 +18,7 @@ def create_app() -> FastAPI:
     app.include_router(freshness_router)
     # Register GET /internal/data-quality on the main FastAPI application.
     app.include_router(data_quality_router)
-    app.mount("/metrics", make_asgi_app()) # 
+    app.mount("/metrics", make_asgi_app()) # endpoint for prometheus to read metric in memory of api process
 
     @app.get("/health")
     def health_check():
