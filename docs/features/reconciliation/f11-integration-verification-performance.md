@@ -78,6 +78,7 @@ sequenceDiagram
 | API/database assertions | New: full persisted result comparison. |
 | Failure/concurrency fixtures | New. |
 | Benchmark runner/artifacts | New: `bench/result-w*.json`. |
+| Week 3 partition benchmark | `bench/week3`: so sánh bảng thường với daily partition + run index cho report một run và báo cáo 7 ngày. |
 | CI workflow | New/update: unit, integration và architecture gates. |
 
 ## 4. API & Data
@@ -122,6 +123,7 @@ sequenceDiagram
 | Alert positive/negative | Sự cố bắn alert; bình thường không alert. |
 | Dependency failure | Transaction/lifecycle/error response đúng. |
 | Performance run | Artifact tái tạo được và lost/duplicated bằng 0 ngoài business duplicate fixture. |
+| Partition benchmark | Hai mô hình trả cùng kết quả; execution plan chứng minh query theo run/date chỉ scan partition cần thiết. |
 | Clean-machine bootstrap | Một lệnh dựng được seed, pipeline, API và dependencies. |
 
 ## 7. Open Questions

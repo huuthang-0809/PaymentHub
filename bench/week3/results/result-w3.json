@@ -1,0 +1,72 @@
+{
+  "repeats": 5,
+  "fixture": {
+    "days": 30,
+    "runs": 1200,
+    "rows_per_detail_table": 1200000
+  },
+  "queries": {
+    "1": {
+      "name": "report page for one run",
+      "before": {
+        "planning_ms": 0.106,
+        "execution_ms": 0.108,
+        "shared_hit_blocks": 86,
+        "shared_read_blocks": 0,
+        "relations_scanned": [
+          "recon_result_before"
+        ],
+        "rows": 51,
+        "result_sha256": "6e88256d6f8929c4b22acdbdee384097f626d28b9707d74d49b6826cb567a1db",
+        "median_execution_ms": 0.121
+      },
+      "after": {
+        "planning_ms": 0.291,
+        "execution_ms": 0.113,
+        "shared_hit_blocks": 32,
+        "shared_read_blocks": 0,
+        "relations_scanned": [
+          "recon_result_after_20260123"
+        ],
+        "rows": 51,
+        "result_sha256": "6e88256d6f8929c4b22acdbdee384097f626d28b9707d74d49b6826cb567a1db",
+        "median_execution_ms": 0.113
+      }
+    },
+    "2": {
+      "name": "seven-day report",
+      "before": {
+        "planning_ms": 0.243,
+        "execution_ms": 168.206,
+        "shared_hit_blocks": 2626,
+        "shared_read_blocks": 153530,
+        "relations_scanned": [
+          "recon_result_before"
+        ],
+        "rows": 42,
+        "result_sha256": "a0e67883697ff73cd04c26146211162d42b6208c189c8c962d420a3d782762d2",
+        "median_execution_ms": 168.206
+      },
+      "after": {
+        "planning_ms": 0.312,
+        "execution_ms": 69.924,
+        "shared_hit_blocks": 43854,
+        "shared_read_blocks": 0,
+        "relations_scanned": [
+          "recon_result_after_20260120",
+          "recon_result_after_20260121",
+          "recon_result_after_20260122",
+          "recon_result_after_20260123",
+          "recon_result_after_20260124",
+          "recon_result_after_20260125",
+          "recon_result_after_20260126"
+        ],
+        "rows": 42,
+        "result_sha256": "a0e67883697ff73cd04c26146211162d42b6208c189c8c962d420a3d782762d2",
+        "median_execution_ms": 83.629
+      }
+    }
+  },
+  "postgres_version": "PostgreSQL 15.19 (Debian 15.19-1.pgdg13+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit",
+  "work_mem": "4MB"
+}

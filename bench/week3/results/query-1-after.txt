@@ -1,0 +1,8 @@
+Limit  (cost=0.41..198.49 rows=51 width=95) (actual time=0.032..0.084 rows=51 loops=1)
+  Buffers: shared hit=16
+  ->  Index Scan using recon_result_after_20260123_run_id_result_type_result_key_idx on recon_result_after_20260123 recon_result_after  (cost=0.41..396.57 rows=102 width=95) (actual time=0.031..0.072 rows=51 loops=1)
+        Index Cond: ((run_id = '6d38ba92-cce1-9c24-b217-5b3d7ba6d0ca'::uuid) AND ((result_type)::text = 'AMOUNT_MISMATCH'::text))
+        Filter: (business_date = '2026-01-23'::date)
+        Buffers: shared hit=16
+Planning Time: 0.305 ms
+Execution Time: 0.115 ms
