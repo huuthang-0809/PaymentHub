@@ -1,0 +1,141 @@
+rule_files:
+  - reconciliation.yml
+
+evaluation_interval: 15s
+
+tests:
+  - name: violations fire after one minute
+    interval: 15s
+    input_series:
+      - series: 'paymenthub_reconciliation_run_currency_delta_minor{region="VN",tenant_id="none",provider="ONEPAY",currency="VND",run_id="run-1",business_date="2026-10-05"}'
+        values: '150000+0x7' # 150000: initial value, +0 in next cycles and repeat this value 7 times
+      - series: 'paymenthub_provider_statement_present{region="VN",tenant_id="none",provider="ONEPAY",business_date="2026-10-05"}'
+        values: '0+0x7'
+      - series: 'paymenthub_reconciliation_run_provider_rows{region="VN",tenant_id="none",provider="ONEPAY",run_id="run-1",business_date="2026-10-05"}'
+        values: '200+0x7'
+      - series: 'paymenthub_reconciliation_run_missing_in_system_rows{region="VN",tenant_id="none",provider="ONEPAY",run_id="run-1",business_date="2026-10-05"}'
+        values: '20+0x7'
+    alert_rule_test:
+      - eval_time: 1m15s # 1m (for) + 15s (evaluation_interval) -> firing
+        alertname: CurrencyDeltaExceeded
+        exp_alerts: # expect result
+          - exp_labels:
+              region: VN
+              tenant_id: none
+              provider: ONEPAY
+              currency: VND
+              run_id: run-1
+              business_date: 2026-10-05
+              severity: warning
+            exp_annotations:
+              summary: Reconciliation currency delta exceeds 100000 minor units
+              run_id: run-1
+              business_date: 2026-10-05
+              runbook: docs/runbooks/currency-delta.md
+      - eval_time: 1m15s
+        alertname: ProviderStatementMissing
+        exp_alerts:
+          - exp_labels:
+              region: VN
+              tenant_id: none
+              provider: ONEPAY
+              business_date: 2026-10-05
+              severity: critical
+            exp_annotations:
+              summary: Provider statement is missing after scheduled run time
+              business_date: 2026-10-05
+              runbook: docs/runbooks/provider-statement-missing.md
+      - eval_time: 1m15s
+        alertname: MissingInSystemRateHigh
+        exp_alerts:
+          - exp_labels:
+              region: VN
+              tenant_id: none
+              provider: ONEPAY
+              run_id: run-1
+              business_date: 2026-10-05
+              severity: warning
+            exp_annotations:
+              summary: MISSING_IN_SYSTEM rate exceeds 5 percent with at least 100 rows
+              run_id: run-1
+              business_date: 2026-10-05
+              runbook: docs/runbooks/missing-in-system-rate.md
+
+  - name: normal and boundary values do not fire
+    interval: 15s
+    input_series:
+      - series: 'paymenthub_reconciliation_run_currency_delta_minor{region="VN",tenant_id="none",provider="ONEPAY",currency="VND",run_id="run-2",business_date="2026-10-05"}'
+        values: '100000+0x7'
+      - series: 'paymenthub_provider_statement_present{region="VN",tenant_id="none",provider="ONEPAY",business_date="2026-10-05"}'
+        values: '1+0x7'
+      - series: 'paymenthub_reconciliation_run_provider_rows{region="VN",tenant_id="none",provider="ONEPAY",run_id="run-2",business_date="2026-10-05"}'
+        values: '100+0x7'
+      - series: 'paymenthub_reconciliation_run_missing_in_system_rows{region="VN",tenant_id="none",provider="ONEPAY",run_id="run-2",business_date="2026-10-05"}'
+        values: '5+0x7'
+    alert_rule_test:
+      - eval_time: 1m15s
+        alertname: CurrencyDeltaExceeded
+        exp_alerts: []
+      - eval_time: 1m15s
+        alertname: ProviderStatementMissing
+        exp_alerts: []
+      - eval_time: 1m15s
+        alertname: MissingInSystemRateHigh
+        exp_alerts: []
+
+  - name: negative delta and minimum sample violation fire
+    interval: 15s
+    input_series:
+      - series: 'paymenthub_reconciliation_run_currency_delta_minor{region="VN",tenant_id="none",provider="ONEPAY",currency="VND",run_id="run-3",business_date="2026-10-05"}'
+        values: '-200000+0x7'
+      - series: 'paymenthub_reconciliation_run_provider_rows{region="VN",tenant_id="none",provider="ONEPAY",run_id="run-3",business_date="2026-10-05"}'
+        values: '100+0x7'
+      - series: 'paymenthub_reconciliation_run_missing_in_system_rows{region="VN",tenant_id="none",provider="ONEPAY",run_id="run-3",business_date="2026-10-05"}'
+        values: '6+0x7'
+    alert_rule_test:
+      - eval_time: 1m15s
+        alertname: CurrencyDeltaExceeded
+        exp_alerts:
+          - exp_labels:
+              region: VN
+              tenant_id: none
+              provider: ONEPAY
+              currency: VND
+              run_id: run-3
+              business_date: 2026-10-05
+              severity: warning
+            exp_annotations:
+              summary: Reconciliation currency delta exceeds 100000 minor units
+              run_id: run-3
+              business_date: 2026-10-05
+              runbook: docs/runbooks/currency-delta.md
+      - eval_time: 1m15s
+        alertname: ProviderStatementMissing
+        exp_alerts: []
+      - eval_time: 1m15s
+        alertname: MissingInSystemRateHigh
+        exp_alerts:
+          - exp_labels:
+              region: VN
+              tenant_id: none
+              provider: ONEPAY
+              run_id: run-3
+              business_date: 2026-10-05
+              severity: warning
+            exp_annotations:
+              summary: MISSING_IN_SYSTEM rate exceeds 5 percent with at least 100 rows
+              run_id: run-3
+              business_date: 2026-10-05
+              runbook: docs/runbooks/missing-in-system-rate.md
+
+  - name: high rate with a small sample is suppressed
+    interval: 15s
+    input_series:
+      - series: 'paymenthub_reconciliation_run_provider_rows{region="VN",tenant_id="none",provider="ONEPAY",run_id="run-4",business_date="2026-10-05"}'
+        values: '50+0x7'
+      - series: 'paymenthub_reconciliation_run_missing_in_system_rows{region="VN",tenant_id="none",provider="ONEPAY",run_id="run-4",business_date="2026-10-05"}'
+        values: '10+0x7'
+    alert_rule_test:
+      - eval_time: 1m15s
+        alertname: MissingInSystemRateHigh
+        exp_alerts: []

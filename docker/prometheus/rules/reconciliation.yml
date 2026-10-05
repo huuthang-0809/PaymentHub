@@ -3,7 +3,7 @@ groups:
     rules:
       - alert: CurrencyDeltaExceeded # alert when delta minor unit > 100.000
         expr: abs(paymenthub_reconciliation_run_currency_delta_minor) > 100000
-        for: 1s # above condition correct in 1 minutes continuously -> firing
+        for: 1m # The condition must remain true for one minute.
         labels:
           severity: warning
         annotations:
@@ -14,7 +14,7 @@ groups:
 
       - alert: ProviderStatementMissing # alert when missing provider file
         expr: paymenthub_provider_statement_present == 0
-        for: 1s
+        for: 1m
         labels:
           severity: critical
         annotations:
@@ -28,7 +28,7 @@ groups:
           and
           paymenthub_reconciliation_run_missing_in_system_rows
           / paymenthub_reconciliation_run_provider_rows > 0.05
-        for: 1s
+        for: 1m
         labels:
           severity: warning
         annotations:
