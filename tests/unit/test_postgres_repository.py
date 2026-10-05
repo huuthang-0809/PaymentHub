@@ -123,6 +123,7 @@ def test_claim_persists_checksum_timezone_scope_and_complete_lineage() -> None:
         "provider_status": "00",
     }
     assert result_values[:2] == (RUN_ID, job_run_id)
+    assert result_values[2] == 1
     assert result_values[8:18] == (
         "system-001",
         "provider-001",

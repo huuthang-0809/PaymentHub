@@ -155,7 +155,7 @@ class PostgreReconRepository:
                    refund_of, refunded_amount_minor,
                    provider_txn_id, provider_amount_minor, provider_currency,
                    delta_amount, source_file, source_row_number, reason
-            FROM recon_result WHERE run_id = %s ORDER BY result_key::integer
+            FROM recon_result WHERE run_id = %s ORDER BY result_key
             """,
             (run_id,),
         )
@@ -251,7 +251,7 @@ class PostgreReconRepository:
                     (
                         run_id,
                         job_run_id,
-                        str(index),
+                        index,
                         result.result_type.value,
                         result.region.value,
                         result.tenant_id,

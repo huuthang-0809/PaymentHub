@@ -7,7 +7,7 @@ from reconciliation.adapters.query import PooledReconQuery
 from reconciliation.application.ports import QueryUnavailable
 
 
-@pytest.mark.parametrize('operation', ['runs', 'snapshot'])
+@pytest.mark.parametrize('operation', ['runs', 'snapshot', 'results_page'])
 def test_pool_errors_are_translated_to_application_errors(operation):
     class UnavailablePool:
         @contextmanager
@@ -20,4 +20,4 @@ def test_pool_errors_are_translated_to_application_errors(operation):
         if operation == 'runs':
             reader.runs()
         else:
-            reader.snapshot('run-id')
+            getattr(reader, operation)('run-id')

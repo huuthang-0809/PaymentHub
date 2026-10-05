@@ -127,7 +127,7 @@ def test_pipeline_replay_and_failed_detail_transaction() -> None:
         assert output.summary == {"MISSING_IN_SYSTEM": 1}
         assert source.calls == 1
         replay = runner.execute(**values)
-        assert replay == output
+        assert replay == replace(output, replayed=True)
         assert source.calls == 1
         assert connection.execute(
             "SELECT count(*) FROM recon_result WHERE run_id = %s",
@@ -191,6 +191,21 @@ def test_query_reads_committed_snapshot_and_filters_runs():
         assert metadata['status'] == 'COMPLETED'
         assert metadata['finished_at'] is not None
         assert stored.results == (row,)
+        page_metadata, page = query.results_page(
+            claim.run_id,
+            result='MISSING_IN_PROVIDER',
+            after=None,
+            fetch_limit=2,
+        )
+        assert page_metadata['status'] == 'COMPLETED'
+        assert [result['result_key'] for result in page] == [1]
+        _, next_page = query.results_page(
+            claim.run_id,
+            result='MISSING_IN_PROVIDER',
+            after='00000000000000000001',
+            fetch_limit=2,
+        )
+        assert next_page == []
         assert query.snapshot(uuid4()) is None
         runs = query.runs(provider=provider, status='COMPLETED')
         assert [run['run_id'] for run in runs] == [claim.run_id]

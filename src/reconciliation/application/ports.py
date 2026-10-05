@@ -152,6 +152,10 @@ class ReconQuery(Protocol):
 
     def snapshot(self, run_id: UUID) -> tuple[dict, StoredRun | None] | None: ...
 
+    def results_page(self, run_id: UUID, *, result: str | None = None,
+                     after: str | None = None, fetch_limit: int = 51
+                     ) -> tuple[dict, list[dict]] | None: ...
+
 
 class ReportExporter(Protocol):
     def __call__(self, results, format: str, data_as_of) -> tuple[bytes, str]: ...

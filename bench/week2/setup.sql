@@ -14,7 +14,7 @@ SELECT md5('run-' || n)::uuid, md5('job-' || n)::uuid,
        DATE '2026-01-01' + ((n - 1) % 30)::integer,
        'ASIA', 'bench-tenant-' || (((n - 1) / 30) % 100),
        (ARRAY['ESPAY','2C2P'])[1 + ((n - 1) / 3000) % 2],
-       'fixture-' || n || '.csv', md5('file-' || n),
+       'fixture-' || n || '.csv', md5('file-' || n) || md5('file-' || n),
        'Asia/Jakarta', TIME '00:00', 'COMPLETED',
        TIMESTAMPTZ '2026-01-01 00:00:00+00', TIMESTAMPTZ '2026-01-01 00:01:00+00'
 FROM generate_series(1, 1000000) AS g(n);
@@ -26,7 +26,7 @@ INSERT INTO recon_result
      delta_amount, source_file, source_row_number)
 SELECT md5('run-' || (1 + (n - 1) / 10000))::uuid,
        md5('job-' || (1 + (n - 1) / 10000))::uuid,
-       (1 + (n - 1) % 10000)::text,
+       1 + (n - 1) % 10000,
        CASE
            WHEN n % 100 = 1 THEN 'FUZZY_MATCHED'
            WHEN n % 10 = 0 THEN 'AMOUNT_MISMATCH'
