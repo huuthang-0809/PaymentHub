@@ -135,14 +135,15 @@ def get_reconciliation_summary(request: Request, run_id: UUID):
 @router.get('/{run_id}/results')
 def get_reconciliation_results(
     request: Request, run_id: UUID,
-    result: ReconResultType | None = None,
+    result: ReconResultType | Literal['ALL'] | None = None,
     limit: int = Query(50, ge=1, le=200),
     cursor: str | None = None,
     sort: Literal['result_key'] = 'result_key',
 ):
     return jsonable_encoder(_query(
         request.app.state.query_reconciliation.results,
-        run_id=run_id, result=result, limit=limit, cursor=cursor, sort=sort,
+        run_id=run_id, result=None if result == 'ALL' else result,
+        limit=limit, cursor=cursor, sort=sort,
     ))
 
 
