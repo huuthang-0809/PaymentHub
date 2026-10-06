@@ -2,10 +2,11 @@ import hashlib
 from dataclasses import replace
 from datetime import date, datetime, time, timezone
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call
 from uuid import UUID
 
 import pytest
+from psycopg.errors import DeadlockDetected
 
 from reconciliation.adapters import PostgreReconRepository
 from reconciliation.adapters.postgres import INSERT_BATCH_SIZE
@@ -198,6 +199,57 @@ def test_complete_run_rolls_back_detail_failure() -> None:
     exit_args = transaction.__exit__.call_args.args
     assert exit_args[0] is RuntimeError
     assert str(exit_args[1]) == "result insert failed"
+
+
+def test_complete_run_retries_deadlock_with_a_new_attempt(monkeypatch) -> None:
+    connection, _, _ = _connection()
+    repository = PostgreReconRepository(connection)
+    persist = MagicMock(side_effect=[
+        DeadlockDetected("deadlock 1"),
+        DeadlockDetected("deadlock 2"),
+        None,
+    ])
+    delays = MagicMock()
+    monkeypatch.setattr(repository, "_complete_run_once", persist)
+    monkeypatch.setattr("reconciliation.adapters.postgres.sleep", delays)
+
+    repository.complete_run(
+        claim=RunClaim(
+            RUN_ID,
+            UUID("00000000-0000-0000-0000-000000000002"),
+            business_date=date(2026, 9, 22),
+        ),
+        system_rows=1,
+        provider_rows=1,
+        provider_txns=[_provider_transaction()],
+        results=[_result()],
+    )
+
+    assert persist.call_count == 3
+    assert delays.call_args_list == [call(15), call(15)]
+
+
+def test_complete_run_raises_after_three_deadlocks(monkeypatch) -> None:
+    connection, _, _ = _connection()
+    repository = PostgreReconRepository(connection)
+    persist = MagicMock(side_effect=DeadlockDetected("still deadlocked"))
+    monkeypatch.setattr(repository, "_complete_run_once", persist)
+    monkeypatch.setattr("reconciliation.adapters.postgres.sleep", MagicMock())
+
+    with pytest.raises(DeadlockDetected, match="still deadlocked"):
+        repository.complete_run(
+            claim=RunClaim(
+                RUN_ID,
+                UUID("00000000-0000-0000-0000-000000000002"),
+                business_date=date(2026, 9, 22),
+            ),
+            system_rows=1,
+            provider_rows=1,
+            provider_txns=[_provider_transaction()],
+            results=[_result()],
+        )
+
+    assert persist.call_count == 3
 
 
 def test_repository_rejects_unknown_business_timezone() -> None:

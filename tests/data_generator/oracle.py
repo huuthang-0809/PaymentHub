@@ -63,14 +63,22 @@ def _system_provider_txn_id(case: BaseCase) -> str | None:
 def _system_status(case: BaseCase) -> str:
     if case.scope.region is Region.ASIA and case.txn_type is TxnType.REFUND:
         return "REFUNDED"
+    if (
+        case.scope.region in {Region.VN, Region.INDIA}
+        and case.mutation == "exact-match"
+    ):
+        return "REFUNDED"
     if case.scope.region is Region.INDIA and case.txn_type is TxnType.TOKENIZATION:
         return "UNKNOWN"
     return "SUCCESS"
 
 
 def _refund_of(case: BaseCase) -> str | None:
-    if case.scope.region is Region.ASIA and case.txn_type is TxnType.REFUND:
+    if case.txn_type is TxnType.REFUND:
         parent_index = (case.index // len(MUTATION_CYCLE)) * len(MUTATION_CYCLE)
+        if case.scope.region is Region.INDIA:
+            prefix = case.provider_txn_id.rsplit("-", 1)[0]
+            return f"{prefix}-{parent_index:06d}"
         prefix = case.system_txn_id.rsplit("-", 1)[0]
         return f"{prefix}-{parent_index:06d}"
     return None
@@ -78,6 +86,8 @@ def _refund_of(case: BaseCase) -> str | None:
 
 def _refunded_amount(case: BaseCase) -> int | None:
     if case.scope.region is Region.INDIA and case.mutation != "invalid-data":
+        if case.mutation == "exact-match":
+            return case.amount_minor + 4
         return 0
     return None
 

@@ -223,3 +223,6 @@ __marimo__/
 .streamlit/secrets.toml
 
 /reference/
+.aider-desk/
+.agents/
+skills-lock.json
