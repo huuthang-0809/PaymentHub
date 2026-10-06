@@ -332,7 +332,8 @@ class PostgreReconRepository:
                 return transaction.raw
             return next(raw_rows, {})
 
-        with self.connection.transaction(), self.connection.cursor() as cursor: #transaction: for begin a transaction and cursor: for execute SQL
+        # Commit partition DDL before writing the run's results.
+        with self.connection.transaction(), self.connection.cursor() as cursor:
             business_date = claim.business_date
             if business_date is None:
                 cursor.execute(
@@ -348,6 +349,7 @@ class PostgreReconRepository:
                 "SELECT ensure_reconciliation_day_partitions(%s)",
                 (business_date,),
             )
+        with self.connection.transaction(), self.connection.cursor() as cursor:
             provider_sql = """
                 INSERT INTO provider_txn (
                     business_date, run_id, job_run_id, region, tenant_id,
@@ -479,7 +481,8 @@ class PostgreReconRepository:
         start_utc: datetime,
         end_utc: datetime,
     ) -> tuple[ProviderTransaction, ...]:
-        with self.connection.cursor() as cursor:
+        # Release read locks before matching and partition creation.
+        with self.connection.transaction(), self.connection.cursor() as cursor:
             cursor.execute(
                 """
                 SELECT p.provider, p.region, p.tenant_id, p.provider_txn_id,

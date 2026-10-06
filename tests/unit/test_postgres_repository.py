@@ -144,8 +144,8 @@ def test_claim_persists_checksum_timezone_scope_and_complete_lineage() -> None:
         149_000,
         "IDR",
     )
-    assert transaction.__enter__.call_count == 3
-    assert transaction.__exit__.call_count == 3
+    assert transaction.__enter__.call_count == 4
+    assert transaction.__exit__.call_count == 4
 
 def test_enqueue_completed_input_reuses_existing_run_without_starting() -> None:
     connection, _, cursor = _connection()

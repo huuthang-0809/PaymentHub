@@ -146,7 +146,8 @@ def _run_reconciliation_job(parameters: dict, metrics_connection) -> None:
     )
     try:
         sources = _system_sources(mongo_client)
-        with connect(_database_url()) as connection:
+        # Reads must not keep a transaction open during matching.
+        with connect(_database_url(), autocommit=True) as connection:
             RunMatching(
                 sources[region],
                 CsvFixtureParser(),
