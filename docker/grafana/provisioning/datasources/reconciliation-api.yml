@@ -1,0 +1,16 @@
+apiVersion: 1
+
+datasources:
+  - name: Reconciliation API
+    uid: reconciliation-api
+    type: yesoreyeram-infinity-datasource
+    access: proxy
+    url: http://api:8000
+    editable: false
+    jsonData:
+      allowedHosts:
+        - http://api:8000
+      auth_method: none
+      customHealthCheckEnabled: true
+      customHealthCheckUrl: http://api:8000/health
+      timeoutInSeconds: 30

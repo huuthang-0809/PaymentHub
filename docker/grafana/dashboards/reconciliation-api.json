@@ -1,0 +1,697 @@
+{
+  "annotations": {"list": []},
+  "description": "Investigate reconciliation runs, balances, exceptions, refunds and alert health from one console.",
+  "editable": true,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [
+    {
+      "asDropdown": false,
+      "icon": "dashboard",
+      "includeVars": false,
+      "keepTime": true,
+      "targetBlank": false,
+      "title": "Operational overview",
+      "tooltip": "Open the Prometheus operational dashboard",
+      "type": "link",
+      "url": "/d/paymenthub-reconciliation/reconciliation-overview"
+    },
+    {
+      "asDropdown": false,
+      "icon": "bell",
+      "includeVars": false,
+      "keepTime": false,
+      "targetBlank": false,
+      "title": "Alerting workspace",
+      "tooltip": "Open rules, alert instances and silences",
+      "type": "link",
+      "url": "/alerting/list"
+    }
+  ],
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0},
+      "id": 104,
+      "panels": [],
+      "title": "Service health",
+      "type": "row"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Current Prometheus alerts in firing state.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "decimals": 0,
+          "min": 0,
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 5, "w": 4, "x": 0, "y": 1},
+      "id": 12,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "vertical", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "value_and_name", "wideLayout": true},
+      "targets": [
+        {"editorMode": "code", "expr": "sum(ALERTS{alertstate=\"firing\"}) or vector(0)", "instant": true, "legendFormat": "Firing alerts", "range": false, "refId": "A"}
+      ],
+      "title": "Firing alerts",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Pending and firing Prometheus alert instances. Use the Alerting workspace link for silences and routing details.",
+      "fieldConfig": {
+        "defaults": {"custom": {"align": "auto", "cellOptions": {"type": "auto"}, "filterable": true}},
+        "overrides": [
+          {
+            "matcher": {"id": "byName", "options": "alertstate"},
+            "properties": [
+              {"id": "custom.cellOptions", "value": {"type": "color-background"}},
+              {"id": "mappings", "value": [{"options": {"firing": {"color": "red", "index": 0}, "pending": {"color": "yellow", "index": 1}}, "type": "value"}]}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "severity"},
+            "properties": [
+              {"id": "custom.cellOptions", "value": {"type": "color-text"}},
+              {"id": "mappings", "value": [{"options": {"critical": {"color": "red", "index": 0}, "warning": {"color": "orange", "index": 1}}, "type": "value"}]}
+            ]
+          }
+        ]
+      },
+      "gridPos": {"h": 5, "w": 20, "x": 4, "y": 1},
+      "id": 13,
+      "options": {"cellHeight": "sm", "enablePagination": true, "footer": {"countRows": true, "fields": "", "reducer": ["sum"], "show": true}, "showHeader": true},
+      "targets": [
+        {"editorMode": "code", "expr": "ALERTS{alertstate=~\"pending|firing\"}", "format": "table", "instant": true, "legendFormat": "{{alertname}}", "range": false, "refId": "A"}
+      ],
+      "title": "Active alerts",
+      "type": "table"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 6},
+      "id": 100,
+      "panels": [],
+      "title": "1 · Choose a run",
+      "type": "row"
+    },
+    {
+      "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "reconciliation-api"},
+      "description": "Recent reconciliation runs. Click a Run ID to load its summary and evidence below.",
+      "fieldConfig": {
+        "defaults": {"custom": {"align": "auto", "cellOptions": {"type": "auto"}, "filterable": true}},
+        "overrides": [
+          {
+            "matcher": {"id": "byName", "options": "Run ID"},
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "targetBlank": false,
+                    "title": "Inspect this run",
+                    "url": "/d/paymenthub-reconciliation-api/reconciliation-api?var-run_id=${__value.raw}"
+                  }
+                ]
+              },
+              {"id": "custom.width", "value": 310}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Status"},
+            "properties": [
+              {"id": "custom.cellOptions", "value": {"type": "color-background"}},
+              {
+                "id": "mappings",
+                "value": [
+                  {"options": {"COMPLETED": {"color": "green", "index": 0}, "FAILED": {"color": "red", "index": 1}, "PENDING": {"color": "yellow", "index": 2}, "RUNNING": {"color": "blue", "index": 3}}, "type": "value"}
+                ]
+              },
+              {"id": "custom.width", "value": 120}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Source file"},
+            "properties": [{"id": "custom.width", "value": 260}]
+          }
+        ]
+      },
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 7},
+      "id": 1,
+      "options": {"cellHeight": "sm", "enablePagination": true, "footer": {"countRows": true, "fields": "", "reducer": ["sum"], "show": true}, "showHeader": true},
+      "targets": [
+        {
+          "columns": [
+            {"selector": "run_id", "text": "Run ID", "type": "string"},
+            {"selector": "business_date", "text": "Business date", "type": "string"},
+            {"selector": "region", "text": "Region", "type": "string"},
+            {"selector": "tenant_id", "text": "Tenant", "type": "string"},
+            {"selector": "provider", "text": "Provider", "type": "string"},
+            {"selector": "status", "text": "Status", "type": "string"},
+            {"selector": "source_file", "text": "Source file", "type": "string"},
+            {"selector": "started_at", "text": "Started", "type": "timestamp"},
+            {"selector": "finished_at", "text": "Finished", "type": "timestamp"}
+          ],
+          "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "reconciliation-api"},
+          "filters": [],
+          "format": "table",
+          "pagination_max_pages": 5,
+          "pagination_mode": "cursor",
+          "pagination_param_cursor_extraction_path": "next_cursor",
+          "pagination_param_cursor_field_name": "cursor",
+          "pagination_param_cursor_field_type": "query",
+          "parser": "backend",
+          "refId": "A",
+          "root_selector": "items",
+          "source": "url",
+          "type": "json",
+          "url": "/reconciliation-runs?limit=200",
+          "url_options": {"data": "", "method": "GET"}
+        }
+      ],
+      "title": "Recent reconciliation runs",
+      "type": "table"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 15},
+      "id": 101,
+      "panels": [],
+      "title": "2 · Run overview",
+      "type": "row"
+    },
+    {
+      "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "reconciliation-api"},
+      "description": "At-a-glance context for the selected reconciliation run.",
+      "fieldConfig": {
+        "defaults": {"color": {"mode": "palette-classic"}},
+        "overrides": [
+          {
+            "matcher": {"id": "byName", "options": "Status"},
+            "properties": [
+              {"id": "mappings", "value": [{"options": {"COMPLETED": {"color": "green", "index": 0}, "FAILED": {"color": "red", "index": 1}, "PENDING": {"color": "yellow", "index": 2}, "RUNNING": {"color": "blue", "index": 3}}, "type": "value"}]}
+            ]
+          }
+        ]
+      },
+      "gridPos": {"h": 6, "w": 16, "x": 0, "y": 16},
+      "id": 2,
+      "options": {"colorMode": "value", "graphMode": "none", "justifyMode": "center", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "/.*/", "values": false}, "textMode": "value_and_name", "wideLayout": true},
+      "targets": [
+        {
+          "columns": [
+            {"selector": "status", "text": "Status", "type": "string"},
+            {"selector": "business_date", "text": "Business date", "type": "string"},
+            {"selector": "region", "text": "Region", "type": "string"},
+            {"selector": "provider", "text": "Provider", "type": "string"},
+            {"selector": "tenant_id", "text": "Tenant", "type": "string"}
+          ],
+          "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "reconciliation-api"},
+          "filters": [],
+          "format": "table",
+          "parser": "backend",
+          "refId": "A",
+          "root_selector": "run",
+          "source": "url",
+          "type": "json",
+          "url": "/reconciliation-runs/${run_id}/summary",
+          "url_options": {"data": "", "method": "GET"}
+        }
+      ],
+      "title": "Selected run · ${run_id:text}",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "reconciliation-api"},
+      "description": "Input counts from the persisted reconciliation summary.",
+      "fieldConfig": {
+        "defaults": {"color": {"mode": "palette-classic"}, "decimals": 0, "min": 0},
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "System rows"}, "properties": [{"id": "color", "value": {"fixedColor": "blue", "mode": "fixed"}}]},
+          {"matcher": {"id": "byName", "options": "Provider rows"}, "properties": [{"id": "color", "value": {"fixedColor": "purple", "mode": "fixed"}}]}
+        ]
+      },
+      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 16},
+      "id": 3,
+      "options": {"colorMode": "value", "graphMode": "none", "justifyMode": "center", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "value_and_name", "wideLayout": true},
+      "targets": [
+        {
+          "columns": [
+            {"selector": "system_count", "text": "System rows", "type": "number"},
+            {"selector": "provider_count", "text": "Provider rows", "type": "number"}
+          ],
+          "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "reconciliation-api"},
+          "filters": [],
+          "format": "table",
+          "parser": "backend",
+          "refId": "A",
+          "root_selector": "",
+          "source": "url",
+          "type": "json",
+          "url": "/reconciliation-runs/${run_id}/summary",
+          "url_options": {"data": "", "method": "GET"}
+        }
+      ],
+      "title": "Input volume",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "reconciliation-api"},
+      "description": "All nine reconciliation classifications from the selected run summary.",
+      "fieldConfig": {
+        "defaults": {"color": {"mode": "palette-classic"}, "decimals": 0, "min": 0},
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "Matched"}, "properties": [{"id": "color", "value": {"fixedColor": "green", "mode": "fixed"}}]},
+          {"matcher": {"id": "byName", "options": "Fuzzy matched"}, "properties": [{"id": "color", "value": {"fixedColor": "blue", "mode": "fixed"}}]},
+          {"matcher": {"id": "byRegexp", "options": "/.*mismatch|Invalid data/"}, "properties": [{"id": "color", "value": {"fixedColor": "red", "mode": "fixed"}}]},
+          {"matcher": {"id": "byRegexp", "options": "/Missing in.*/"}, "properties": [{"id": "color", "value": {"fixedColor": "orange", "mode": "fixed"}}]},
+          {"matcher": {"id": "byName", "options": "Duplicate"}, "properties": [{"id": "color", "value": {"fixedColor": "purple", "mode": "fixed"}}]},
+          {"matcher": {"id": "byName", "options": "Not reconcilable"}, "properties": [{"id": "color", "value": {"fixedColor": "gray", "mode": "fixed"}}]}
+        ]
+      },
+      "gridPos": {"h": 10, "w": 12, "x": 0, "y": 22},
+      "id": 4,
+      "options": {"displayMode": "gradient", "maxVizHeight": 300, "minVizHeight": 20, "minVizWidth": 8, "namePlacement": "left", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "showUnfilled": true, "sizing": "auto", "valueMode": "color"},
+      "targets": [
+        {
+          "columns": [
+            {"selector": "summary.MATCHED", "text": "Matched", "type": "number"},
+            {"selector": "summary.FUZZY_MATCHED", "text": "Fuzzy matched", "type": "number"},
+            {"selector": "summary.AMOUNT_MISMATCH", "text": "Amount mismatch", "type": "number"},
+            {"selector": "summary.CURRENCY_MISMATCH", "text": "Currency mismatch", "type": "number"},
+            {"selector": "summary.MISSING_IN_SYSTEM", "text": "Missing in system", "type": "number"},
+            {"selector": "summary.MISSING_IN_PROVIDER", "text": "Missing in provider", "type": "number"},
+            {"selector": "summary.DUPLICATE", "text": "Duplicate", "type": "number"},
+            {"selector": "summary.NOT_RECONCILABLE", "text": "Not reconcilable", "type": "number"},
+            {"selector": "summary.INVALID_DATA", "text": "Invalid data", "type": "number"}
+          ],
+          "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "reconciliation-api"},
+          "filters": [],
+          "format": "table",
+          "parser": "backend",
+          "refId": "A",
+          "root_selector": "",
+          "source": "url",
+          "type": "json",
+          "url": "/reconciliation-runs/${run_id}/summary",
+          "url_options": {"data": "", "method": "GET"}
+        }
+      ],
+      "title": "Outcome distribution",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "reconciliation-api"},
+      "description": "Financial totals returned in financial_summary.totals_by_currency. Amounts stay strings to preserve numeric(38,0) precision.",
+      "fieldConfig": {
+        "defaults": {"custom": {"align": "auto", "cellOptions": {"type": "auto"}}},
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "Currency"}, "properties": [{"id": "custom.cellOptions", "value": {"type": "color-text"}}, {"id": "color", "value": {"fixedColor": "blue", "mode": "fixed"}}, {"id": "custom.width", "value": 90}]},
+          {"matcher": {"id": "byRegexp", "options": "/.*amount|Delta/"}, "properties": [{"id": "custom.align", "value": "right"}, {"id": "custom.width", "value": 150}]},
+          {"matcher": {"id": "byRegexp", "options": "/.*rows|Missing.*/"}, "properties": [{"id": "custom.align", "value": "right"}]}
+        ]
+      },
+      "gridPos": {"h": 10, "w": 12, "x": 12, "y": 22},
+      "id": 5,
+      "options": {"cellHeight": "sm", "footer": {"countRows": false, "fields": "", "reducer": ["sum"], "show": false}, "showHeader": true},
+      "targets": [
+        {
+          "columns": [
+            {"selector": "currency", "text": "Currency", "type": "string"},
+            {"selector": "system_amount_minor", "text": "System amount", "type": "string"},
+            {"selector": "provider_amount_minor", "text": "Provider amount", "type": "string"},
+            {"selector": "delta_amount_minor", "text": "Delta", "type": "string"},
+            {"selector": "system_amount_count", "text": "System rows", "type": "number"},
+            {"selector": "provider_amount_count", "text": "Provider rows", "type": "number"},
+            {"selector": "system_missing_amount_count", "text": "Missing system amounts", "type": "number"},
+            {"selector": "provider_missing_amount_count", "text": "Missing provider amounts", "type": "number"}
+          ],
+          "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "reconciliation-api"},
+          "filters": [],
+          "format": "table",
+          "parser": "backend",
+          "refId": "A",
+          "root_selector": "financial_summary.totals_by_currency",
+          "source": "url",
+          "type": "json",
+          "url": "/reconciliation-runs/${run_id}/summary",
+          "url_options": {"data": "", "method": "GET"}
+        }
+      ],
+      "title": "Currency balance",
+      "type": "table"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 32},
+      "id": 102,
+      "panels": [],
+      "title": "3 · Refund analysis",
+      "type": "row"
+    },
+    {
+      "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "reconciliation-api"},
+      "description": "Refund parent metrics for the selected run.",
+      "fieldConfig": {
+        "defaults": {"color": {"mode": "palette-classic"}, "decimals": 0, "min": 0},
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "Refunded rate"}, "properties": [{"id": "unit", "value": "percentunit"}, {"id": "decimals", "value": 2}, {"id": "color", "value": {"fixedColor": "green", "mode": "fixed"}}]},
+          {"matcher": {"id": "byName", "options": "Missing evidence"}, "properties": [{"id": "color", "value": {"mode": "thresholds"}}, {"id": "thresholds", "value": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}]}
+        ]
+      },
+      "gridPos": {"h": 7, "w": 10, "x": 0, "y": 33},
+      "id": 6,
+      "options": {"colorMode": "value", "graphMode": "none", "justifyMode": "center", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "value_and_name", "wideLayout": true},
+      "targets": [
+        {
+          "columns": [
+            {"selector": "eligible_parent_count", "text": "Eligible parents", "type": "number"},
+            {"selector": "refunded_parent_count", "text": "Refunded parents", "type": "number"},
+            {"selector": "missing_evidence_count", "text": "Missing evidence", "type": "number"},
+            {"selector": "refunded_transaction_rate", "text": "Refunded rate", "type": "number"}
+          ],
+          "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "reconciliation-api"},
+          "filters": [],
+          "format": "table",
+          "parser": "backend",
+          "refId": "A",
+          "root_selector": "financial_summary.refund_parent_metrics",
+          "source": "url",
+          "type": "json",
+          "url": "/reconciliation-runs/${run_id}/summary",
+          "url_options": {"data": "", "method": "GET"}
+        }
+      ],
+      "title": "Refund parent metrics",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "reconciliation-api"},
+      "description": "Successful refund totals grouped by currency.",
+      "fieldConfig": {
+        "defaults": {"custom": {"align": "auto", "cellOptions": {"type": "auto"}}},
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "Currency"}, "properties": [{"id": "custom.cellOptions", "value": {"type": "color-text"}}, {"id": "color", "value": {"fixedColor": "blue", "mode": "fixed"}}]},
+          {"matcher": {"id": "byName", "options": "Refunded amount"}, "properties": [{"id": "custom.align", "value": "right"}, {"id": "custom.width", "value": 220}]}
+        ]
+      },
+      "gridPos": {"h": 7, "w": 14, "x": 10, "y": 33},
+      "id": 7,
+      "options": {"cellHeight": "sm", "footer": {"countRows": false, "fields": "", "reducer": ["sum"], "show": false}, "showHeader": true},
+      "targets": [
+        {
+          "columns": [
+            {"selector": "currency", "text": "Currency", "type": "string"},
+            {"selector": "count", "text": "Refunds", "type": "number"},
+            {"selector": "amount_minor", "text": "Refunded amount", "type": "string"},
+            {"selector": "missing_amount_count", "text": "Missing amounts", "type": "number"}
+          ],
+          "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "reconciliation-api"},
+          "filters": [],
+          "format": "table",
+          "parser": "backend",
+          "refId": "A",
+          "root_selector": "financial_summary.refunds_by_currency",
+          "source": "url",
+          "type": "json",
+          "url": "/reconciliation-runs/${run_id}/summary",
+          "url_options": {"data": "", "method": "GET"}
+        }
+      ],
+      "title": "Refunds by currency",
+      "type": "table"
+    },
+    {
+      "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "reconciliation-api"},
+      "description": "Refund parent/child checks returned by the summary API.",
+      "fieldConfig": {
+        "defaults": {"custom": {"align": "auto", "cellOptions": {"type": "auto"}, "filterable": true}},
+        "overrides": [
+          {
+            "matcher": {"id": "byName", "options": "Check result"},
+            "properties": [
+              {"id": "custom.cellOptions", "value": {"type": "color-background"}},
+              {"id": "mappings", "value": [{"options": {"AMOUNT_MISMATCH": {"color": "red", "index": 0}, "AMBIGUOUS_PARENT": {"color": "orange", "index": 1}, "CHILDREN_NOT_IN_SNAPSHOT": {"color": "yellow", "index": 2}, "INCOMPLETE_CHILD_DATA": {"color": "orange", "index": 3}, "LINKED": {"color": "green", "index": 4}, "MATCHED": {"color": "green", "index": 5}, "MISSING_CURRENCY": {"color": "yellow", "index": 6}, "MISSING_PARENT_REFERENCE": {"color": "orange", "index": 7}, "PARENT_NOT_IN_SNAPSHOT": {"color": "yellow", "index": 8}, "PARENT_TOTAL_UNAVAILABLE": {"color": "yellow", "index": 9}}, "type": "value"}]}
+            ]
+          },
+          {"matcher": {"id": "byRegexp", "options": "/.*amount/"}, "properties": [{"id": "custom.align", "value": "right"}]}
+        ]
+      },
+      "gridPos": {"h": 9, "w": 24, "x": 0, "y": 40},
+      "id": 8,
+      "options": {"cellHeight": "sm", "enablePagination": true, "footer": {"countRows": true, "fields": "", "reducer": ["sum"], "show": true}, "showHeader": true},
+      "targets": [
+        {
+          "columns": [
+            {"selector": "region", "text": "Region", "type": "string"},
+            {"selector": "tenant_id", "text": "Tenant", "type": "string"},
+            {"selector": "provider", "text": "Provider", "type": "string"},
+            {"selector": "refund_of", "text": "Parent transaction", "type": "string"},
+            {"selector": "currency", "text": "Currency", "type": "string"},
+            {"selector": "successful_child_count", "text": "Successful children", "type": "number"},
+            {"selector": "successful_child_amount_minor", "text": "Children amount", "type": "string"},
+            {"selector": "parent_refunded_amount_minor", "text": "Parent refunded amount", "type": "string"},
+            {"selector": "status", "text": "Check result", "type": "string"}
+          ],
+          "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "reconciliation-api"},
+          "filters": [],
+          "format": "table",
+          "parser": "backend",
+          "refId": "A",
+          "root_selector": "financial_summary.refund_cross_checks",
+          "source": "url",
+          "type": "json",
+          "url": "/reconciliation-runs/${run_id}/summary",
+          "url_options": {"data": "", "method": "GET"}
+        }
+      ],
+      "title": "Refund cross-checks",
+      "type": "table"
+    },
+    {
+      "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "reconciliation-api"},
+      "description": "Dimension breakdowns returned by financial_summary.breakdowns. Expand totals_by_currency in Inspect data when needed.",
+      "fieldConfig": {
+        "defaults": {"custom": {"align": "auto", "cellOptions": {"type": "auto"}, "filterable": true}},
+        "overrides": [
+          {
+            "matcher": {"id": "byName", "options": "Outcome"},
+            "properties": [
+              {"id": "custom.cellOptions", "value": {"type": "color-text"}},
+              {"id": "mappings", "value": [{"options": {"AMOUNT_MISMATCH": {"color": "red", "index": 0}, "CURRENCY_MISMATCH": {"color": "red", "index": 1}, "DUPLICATE": {"color": "purple", "index": 2}, "FUZZY_MATCHED": {"color": "blue", "index": 3}, "INVALID_DATA": {"color": "red", "index": 4}, "MATCHED": {"color": "green", "index": 5}, "MISSING_IN_PROVIDER": {"color": "orange", "index": 6}, "MISSING_IN_SYSTEM": {"color": "orange", "index": 7}, "NOT_RECONCILABLE": {"color": "gray", "index": 8}}, "type": "value"}]}
+            ]
+          },
+          {"matcher": {"id": "byName", "options": "Currency totals"}, "properties": [{"id": "custom.width", "value": 420}]}
+        ]
+      },
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 49},
+      "id": 9,
+      "options": {"cellHeight": "sm", "enablePagination": true, "footer": {"countRows": true, "fields": "", "reducer": ["sum"], "show": true}, "showHeader": true},
+      "targets": [
+        {
+          "columns": [
+            {"selector": "region", "text": "Region", "type": "string"},
+            {"selector": "tenant_id", "text": "Tenant", "type": "string"},
+            {"selector": "provider", "text": "Provider", "type": "string"},
+            {"selector": "txn_type", "text": "Transaction type", "type": "string"},
+            {"selector": "result", "text": "Outcome", "type": "string"},
+            {"selector": "system_count", "text": "System rows", "type": "number"},
+            {"selector": "provider_count", "text": "Provider rows", "type": "number"},
+            {"selector": "unallocated_currency_count", "text": "Unallocated currency", "type": "number"},
+            {"selector": "totals_by_currency", "text": "Currency totals", "type": "string"}
+          ],
+          "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "reconciliation-api"},
+          "filters": [],
+          "format": "table",
+          "parser": "backend",
+          "refId": "A",
+          "root_selector": "financial_summary.breakdowns",
+          "source": "url",
+          "type": "json",
+          "url": "/reconciliation-runs/${run_id}/summary",
+          "url_options": {"data": "", "method": "GET"}
+        }
+      ],
+      "title": "Outcome breakdown",
+      "type": "table"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 59},
+      "id": 103,
+      "panels": [],
+      "title": "4 · Evidence & export",
+      "type": "row"
+    },
+    {
+      "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "reconciliation-api"},
+      "description": "Detailed evidence returned by GET /reconciliation-runs/{run_id}/results. Cursor pagination stops at 50 pages (10,000 rows by default).",
+      "fieldConfig": {
+        "defaults": {"custom": {"align": "auto", "cellOptions": {"type": "auto"}, "filterable": true}},
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "#"}, "properties": [{"id": "custom.width", "value": 80}, {"id": "custom.align", "value": "right"}]},
+          {"matcher": {"id": "byName", "options": "Reason"}, "properties": [{"id": "custom.width", "value": 340}, {"id": "custom.wrapText", "value": true}]},
+          {
+            "matcher": {"id": "byName", "options": "Outcome"},
+            "properties": [
+              {"id": "custom.width", "value": 180},
+              {"id": "custom.cellOptions", "value": {"type": "color-background"}},
+              {"id": "mappings", "value": [{"options": {"AMOUNT_MISMATCH": {"color": "red", "index": 0}, "CURRENCY_MISMATCH": {"color": "red", "index": 1}, "DUPLICATE": {"color": "purple", "index": 2}, "FUZZY_MATCHED": {"color": "blue", "index": 3}, "INVALID_DATA": {"color": "red", "index": 4}, "MATCHED": {"color": "green", "index": 5}, "MISSING_IN_PROVIDER": {"color": "orange", "index": 6}, "MISSING_IN_SYSTEM": {"color": "orange", "index": 7}, "NOT_RECONCILABLE": {"color": "gray", "index": 8}}, "type": "value"}]}
+            ]
+          },
+          {"matcher": {"id": "byRegexp", "options": "/.*amount|Delta/"}, "properties": [{"id": "custom.align", "value": "right"}, {"id": "custom.width", "value": 165}]},
+          {"matcher": {"id": "byRegexp", "options": "/.*transaction ID/"}, "properties": [{"id": "custom.width", "value": 230}]}
+        ]
+      },
+      "gridPos": {"h": 18, "w": 24, "x": 0, "y": 60},
+      "id": 10,
+      "options": {"cellHeight": "sm", "enablePagination": true, "footer": {"countRows": true, "fields": "", "reducer": ["sum"], "show": true}, "showHeader": true},
+      "targets": [
+        {
+          "columns": [
+            {"selector": "result_key", "text": "#", "type": "number"},
+            {"selector": "result_type", "text": "Outcome", "type": "string"},
+            {"selector": "region", "text": "Region", "type": "string"},
+            {"selector": "tenant_id", "text": "Tenant", "type": "string"},
+            {"selector": "provider", "text": "Provider", "type": "string"},
+            {"selector": "txn_type", "text": "Transaction type", "type": "string"},
+            {"selector": "system_txn_id", "text": "System transaction ID", "type": "string"},
+            {"selector": "system_provider_txn_id", "text": "System provider ID", "type": "string"},
+            {"selector": "system_status", "text": "System status", "type": "string"},
+            {"selector": "system_amount_minor", "text": "System amount", "type": "string"},
+            {"selector": "system_currency", "text": "System currency", "type": "string"},
+            {"selector": "refund_of", "text": "Refund parent", "type": "string"},
+            {"selector": "refunded_amount_minor", "text": "Refunded amount", "type": "string"},
+            {"selector": "provider_txn_id", "text": "Provider transaction ID", "type": "string"},
+            {"selector": "provider_amount_minor", "text": "Provider amount", "type": "string"},
+            {"selector": "provider_currency", "text": "Provider currency", "type": "string"},
+            {"selector": "delta_amount", "text": "Delta", "type": "string"},
+            {"selector": "source_file", "text": "Source file", "type": "string"},
+            {"selector": "source_row_number", "text": "Source row", "type": "number"},
+            {"selector": "reason", "text": "Reason", "type": "string"}
+          ],
+          "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "reconciliation-api"},
+          "filters": [],
+          "format": "table",
+          "pagination_max_pages": 50,
+          "pagination_mode": "cursor",
+          "pagination_param_cursor_extraction_path": "next_cursor",
+          "pagination_param_cursor_field_name": "cursor",
+          "pagination_param_cursor_field_type": "query",
+          "parser": "backend",
+          "refId": "A",
+          "root_selector": "items",
+          "source": "url",
+          "type": "json",
+          "url": "/reconciliation-runs/${run_id}/results?limit=200&result=${result_type}",
+          "url_options": {"data": "", "method": "GET"}
+        }
+      ],
+      "title": "Transaction evidence · ${result_type:text}",
+      "type": "table"
+    },
+    {
+      "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "reconciliation-api"},
+      "description": "Downloads are served by the existing report API and preserve the complete result set.",
+      "gridPos": {"h": 4, "w": 24, "x": 0, "y": 78},
+      "id": 11,
+      "options": {
+        "code": {"language": "plaintext", "showLineNumbers": false, "showMiniMap": false},
+        "content": "### Download the complete evidence set\nRun: `${run_id}`  \n\n[**Download CSV**](${api_public_url}/reconciliation-runs/${run_id}/report?format=csv) &nbsp;&nbsp; [**Download XLSX**](${api_public_url}/reconciliation-runs/${run_id}/report?format=xlsx) &nbsp;&nbsp; [**Download Parquet**](${api_public_url}/reconciliation-runs/${run_id}/report?format=parquet)  \n\n_Exports include the complete run; the table above is optimized for investigation._",
+        "mode": "markdown"
+      },
+      "title": "Export report",
+      "type": "text"
+    }
+  ],
+  "refresh": "",
+  "schemaVersion": 41,
+  "tags": ["paymenthub", "reconciliation", "api"],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "reconciliation-api"},
+        "definition": "Reconciliation runs from API",
+        "hide": 0,
+        "includeAll": false,
+        "label": "Run",
+        "multi": false,
+        "name": "run_id",
+        "options": [],
+        "query": {
+          "infinityQuery": {
+            "columns": [
+              {"selector": "__text", "text": "__text", "type": "string"},
+              {"selector": "__value", "text": "__value", "type": "string"}
+            ],
+            "filters": [],
+            "format": "table",
+            "pagination_max_pages": 5,
+            "pagination_mode": "cursor",
+            "pagination_param_cursor_extraction_path": "next_cursor",
+            "pagination_param_cursor_field_name": "cursor",
+            "pagination_param_cursor_field_type": "query",
+            "parser": "backend",
+            "refId": "variable",
+            "root_selector": "$.items.{\"__text\": business_date & \" · \" & region & \" · \" & provider & \" · \" & status, \"__value\": run_id}",
+            "source": "url",
+            "type": "json",
+            "url": "/reconciliation-runs?limit=200",
+            "url_options": {"data": "", "method": "GET"}
+          },
+          "query": "",
+          "queryType": "infinity"
+        },
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 2,
+        "type": "query"
+      },
+      {
+        "allValue": "ALL",
+        "current": {"selected": true, "text": "All", "value": "$__all"},
+        "hide": 0,
+        "includeAll": true,
+        "label": "Outcome",
+        "multi": false,
+        "name": "result_type",
+        "options": [
+          {"selected": true, "text": "All", "value": "$__all"},
+          {"selected": false, "text": "Matched", "value": "MATCHED"},
+          {"selected": false, "text": "Fuzzy matched", "value": "FUZZY_MATCHED"},
+          {"selected": false, "text": "Amount mismatch", "value": "AMOUNT_MISMATCH"},
+          {"selected": false, "text": "Currency mismatch", "value": "CURRENCY_MISMATCH"},
+          {"selected": false, "text": "Missing in system", "value": "MISSING_IN_SYSTEM"},
+          {"selected": false, "text": "Missing in provider", "value": "MISSING_IN_PROVIDER"},
+          {"selected": false, "text": "Duplicate", "value": "DUPLICATE"},
+          {"selected": false, "text": "Not reconcilable", "value": "NOT_RECONCILABLE"},
+          {"selected": false, "text": "Invalid data", "value": "INVALID_DATA"}
+        ],
+        "query": "Matched : MATCHED,Fuzzy matched : FUZZY_MATCHED,Amount mismatch : AMOUNT_MISMATCH,Currency mismatch : CURRENCY_MISMATCH,Missing in system : MISSING_IN_SYSTEM,Missing in provider : MISSING_IN_PROVIDER,Duplicate : DUPLICATE,Not reconcilable : NOT_RECONCILABLE,Invalid data : INVALID_DATA",
+        "skipUrlSync": false,
+        "type": "custom"
+      },
+      {
+        "current": {"selected": true, "text": "http://localhost:8000", "value": "http://localhost:8000"},
+        "hide": 0,
+        "label": "Report API URL",
+        "name": "api_public_url",
+        "options": [{"selected": true, "text": "http://localhost:8000", "value": "http://localhost:8000"}],
+        "query": "http://localhost:8000",
+        "skipUrlSync": false,
+        "type": "textbox"
+      }
+    ]
+  },
+  "time": {"from": "now-7d", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Payment Reconciliation Console",
+  "uid": "paymenthub-reconciliation-api",
+  "version": 1,
+  "weekStart": ""
+}
