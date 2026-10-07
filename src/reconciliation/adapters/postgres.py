@@ -2,6 +2,7 @@ import hashlib
 import json
 from collections import Counter
 from contextlib import contextmanager
+from dataclasses import asdict
 from datetime import date, datetime, time
 from pathlib import Path
 from typing import Iterator
@@ -17,6 +18,7 @@ from reconciliation.application.ports import (
     RunSubmission,
     StoredRun,
 )
+from reconciliation.application.summary import build_financial_summary
 from reconciliation.domain import ProviderTransaction, ReconResult, ReconResultType
 from shared_kernel import CanonicalStatus, Region, TxnType
 
@@ -43,10 +45,9 @@ class PostgreReconRepository:
         self.business_timezone = business_timezone
 
     @staticmethod
-    def _input_identity(
-        business_date: date, provider: str, statement_content: bytes
+    def _checksum_identity(
+        business_date: date, provider: str, checksum: str
     ) -> tuple[str, int]:
-        checksum = hashlib.sha256(statement_content).hexdigest()
         identity = json.dumps(
             [business_date.isoformat(), provider, checksum],
             separators=(",", ":"),
@@ -55,6 +56,16 @@ class PostgreReconRepository:
             hashlib.sha256(identity).digest()[:8], "big", signed=True
         )
         return checksum, lock_key
+
+    @classmethod
+    def _input_identity(
+        cls, business_date: date, provider: str, statement_content: bytes
+    ) -> tuple[str, int]:
+        return cls._checksum_identity(
+            business_date,
+            provider,
+            hashlib.sha256(statement_content).hexdigest(),
+        )
 
     @staticmethod
     def _validate_scope(
@@ -78,14 +89,14 @@ class PostgreReconRepository:
         tenant_id: str | None,
         provider: str,
         statement: Path,
-        statement_content: bytes,
+        statement_checksum: str,
         business_timezone: str,
         cutoff_time: time,
         run_id: UUID,
     ) -> RunSubmission:
         """Durably register work before it is submitted to the background pool."""
-        checksum, lock_key = self._input_identity(
-            business_date, provider, statement_content
+        checksum, lock_key = self._checksum_identity(
+            business_date, provider, statement_checksum
         )
         with self.connection.transaction(), self.connection.cursor() as cursor:
             cursor.execute("SELECT pg_advisory_xact_lock(%s)", (lock_key,))
@@ -282,6 +293,10 @@ class PostgreReconRepository:
             )
             for row in rows
         )
+        financial_summary = metrics.get("financial_summary")
+        if financial_summary is None and include_results:
+            # Compatibility for runs completed before summary snapshots existed.
+            financial_summary = asdict(build_financial_summary(results))
         return StoredRun(
             # Runs created before F06 did not store system_rows in metrics.
             system_rows=metrics.get(
@@ -290,6 +305,7 @@ class PostgreReconRepository:
             ),
             provider_rows=metrics.get("provider_rows", 0),
             summary=metrics.get("summary", {}), results=results,
+            financial_summary=financial_summary,
         )
 
     def complete_run(
@@ -300,9 +316,21 @@ class PostgreReconRepository:
         provider_rows: int,
         provider_txns: list[ProviderTransaction],
         results: list[ReconResult],
+        financial_summary=None,
+        provider_raw_rows=None,
     ) -> None:
         run_id, job_run_id = claim.run_id, claim.job_run_id
         summary = Counter(result.result_type.value for result in results)
+        if financial_summary is None:
+            # Keep direct repository callers compatible; the normal application
+            # flow passes the summary it already calculated.
+            financial_summary = asdict(build_financial_summary(results))
+        raw_rows = iter(provider_raw_rows or ())
+
+        def persisted_raw(transaction: ProviderTransaction):
+            if transaction.raw:
+                return transaction.raw
+            return next(raw_rows, {})
 
         with self.connection.transaction(), self.connection.cursor() as cursor: #transaction: for begin a transaction and cursor: for execute SQL
             business_date = claim.business_date
@@ -357,7 +385,7 @@ class PostgreReconRepository:
                             txn.late_arriving,
                             txn.source_file,
                             txn.source_row_number,
-                            Jsonb(txn.raw),
+                            Jsonb(persisted_raw(txn)),
                         )
                         for txn in batch
                     ],
@@ -434,7 +462,8 @@ class PostgreReconRepository:
                         "late_provider_rows": sum(
                             txn.late_arriving for txn in provider_txns
                         ),
-                        "results": len(results), "summary": dict(summary)}),
+                        "results": len(results), "summary": dict(summary),
+                        "financial_summary": financial_summary}),
                  job_run_id),
             )
             if cursor.rowcount != 1:

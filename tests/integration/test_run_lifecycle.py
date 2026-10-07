@@ -1,7 +1,7 @@
 """Run against a disposable, migrated PostgreSQL database via F06_TEST_DATABASE_URL."""
 
 import os
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import date, datetime, time, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -76,6 +76,7 @@ def test_financial_summary_survives_postgres_replay() -> None:
             assert stored is not None
             actual = build_financial_summary(stored.results)
             assert actual == build_financial_summary(rows)
+            assert stored.financial_summary == asdict(actual)
             assert actual.totals_by_currency[0].delta_amount_minor == 13000
             assert actual.refund_parent_metrics.refunded_transaction_rate == "1.000000"
             assert actual.refund_cross_checks[0].status == "MATCHED"

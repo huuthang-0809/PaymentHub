@@ -1,7 +1,7 @@
 import csv
 import io
 import json
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import UTC, date, datetime
 from uuid import uuid4
 
@@ -14,6 +14,7 @@ import pyarrow.parquet as pq
 
 from reconciliation.adapters.http import router
 from reconciliation.application.query import QueryReconciliation, encode_cursor, result_dict
+from reconciliation.application.summary import build_financial_summary
 from reconciliation.adapters.report import export_report
 from reconciliation.application.ports import (
     QueryUnavailable, RunInProgress, RunNotFound, StoredRun,
@@ -35,7 +36,10 @@ def setup_api():
     metadata = dict(run_id=run_id, status='COMPLETED', started_at=datetime.now(UTC),
                     finished_at=datetime.now(UTC), region='INDIA', provider='RAZORPAY',
                     tenant_id=None, business_date=date(2026, 9, 22))
-    stored = StoredRun(3, 0, {'MISSING_IN_PROVIDER': 2, 'INVALID_DATA': 1}, rows)
+    stored = StoredRun(
+        3, 0, {'MISSING_IN_PROVIDER': 2, 'INVALID_DATA': 1}, rows,
+        asdict(build_financial_summary(rows)),
+    )
     app = FastAPI()
     app.include_router(router)
 
@@ -48,10 +52,14 @@ def setup_api():
         return metadata, stored if metadata['status'] == 'COMPLETED' else None
 
     class Reader:
+        def __init__(self):
+            self.snapshot_result_flags = []
+
         def runs(self, **filters):
             return query('runs', **filters)
 
-        def snapshot(self, run_id):
+        def snapshot(self, run_id, *, include_results=True):
+            self.snapshot_result_flags.append(include_results)
             return query('snapshot', run_id=run_id)
 
         def results_page(self, run_id, *, result=None, after=None, fetch_limit=51):
@@ -67,8 +75,9 @@ def setup_api():
                           and (after is None or f"{i:020d}" > after)]
             return meta, candidates[:fetch_limit]
 
-
-    app.state.query_reconciliation = QueryReconciliation(Reader(), export_report)
+    reader = Reader()
+    app.state.query_reconciliation = QueryReconciliation(reader, export_report)
+    app.state.reconciliation_reader = reader
     app.state.delete_reconciliation_run = lambda run_id: None
     return TestClient(app), run_id, metadata
 
@@ -80,6 +89,7 @@ def test_summary_results_filter_and_cursor(setup_api):
     assert summary['system_count'] == 3
     assert summary['meta']['data_as_of']
     assert summary['financial_summary']['refunds_by_currency'][0]['count'] == 3
+    assert client.app.state.reconciliation_reader.snapshot_result_flags == [False]
     response = client.get(base + '/results', params={'limit': 1, 'result': 'MISSING_IN_PROVIDER'})
     assert response.status_code == 200
     first = response.json()

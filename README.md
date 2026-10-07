@@ -25,16 +25,16 @@ dữ liệu của một ngày không tràn sang reconciliation run ngày kế ti
 Có thể đổi nhanh cấu hình ngay trên cùng một lệnh, ví dụ:
 
 ```bash
+docker volume rm payment-intern_postgres_data
 docker compose up -d --build
 
 export SIMULATION_START_DATE=2026-10-01 SIMULATION_DAYS=2
-export SIMULATION_SECONDS_PER_DAY=300 SIMULATION_RECORDS_PER_REGION=2000000
+export SIMULATION_SECONDS_PER_DAY=300 SIMULATION_RECORDS_PER_REGION=500000
 export SIMULATION_MISSING_STATEMENT_COUNT=1
 export RECON_STATEMENT_DIR=./tests/generated/month-simulation/provider-statements
 
 docker compose run --rm month-simulation-generate
-docker compose --profile scheduler up \
-  reconciliation-scheduler
+docker compose --profile scheduler up --build
 ```
 
 `SIMULATION_MISSING_STATEMENT_COUNT` nhận `0`, `1` hoặc `2`; đặt `0` để chạy đủ

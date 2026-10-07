@@ -63,7 +63,8 @@ sequenceDiagram
 ### Processing
 
 1. FastAPI parse form fields, đọc upload và sanitize filename.
-2. `CsvFixtureParser` decode, detect delimiter, validate header/rows và tạo `ProviderTransaction`.
+2. `CsvFixtureParser` decode theo stream, detect delimiter, validate header/rows và tạo
+   `ProviderTransaction`; raw row được giữ trong file tạm thay vì gắn vào object matching.
 3. `RunMatching` validate toàn bộ rows thuộc requested scope; issue bất kỳ trả 422.
 
 ### Components

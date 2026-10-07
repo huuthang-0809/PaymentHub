@@ -1,4 +1,5 @@
 import hashlib
+from dataclasses import replace
 from datetime import date, datetime, time, timezone
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -96,7 +97,11 @@ def test_claim_persists_checksum_timezone_scope_and_complete_lineage() -> None:
     ) as claim:
         repository.complete_run(
             claim=claim, system_rows=1, provider_rows=1,
-            provider_txns=[_provider_transaction()], results=[_result()],
+            provider_txns=[replace(_provider_transaction(), raw={})],
+            results=[_result()],
+            provider_raw_rows=iter([{
+                "account": "masked", "provider_status": "00",
+            }]),
         )
 
     job_run_id = claim.job_run_id
@@ -163,7 +168,7 @@ def test_enqueue_completed_input_reuses_existing_run_without_starting() -> None:
         tenant_id="asia-id",
         provider="ESPAY",
         statement=Path("espay.csv"),
-        statement_content=STATEMENT_CONTENT,
+        statement_checksum=hashlib.sha256(STATEMENT_CONTENT).hexdigest(),
         business_timezone="Asia/Jakarta",
         cutoff_time=time(2),
     )

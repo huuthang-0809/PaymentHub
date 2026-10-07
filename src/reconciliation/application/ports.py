@@ -3,7 +3,7 @@ from contextlib import AbstractContextManager
 from datetime import date, datetime, time
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Mapping, Protocol
+from typing import TYPE_CHECKING, Any, Iterator, Mapping, Protocol
 
 if TYPE_CHECKING:
     from .matching import MatchingRunOutput
@@ -64,7 +64,7 @@ class ReconRepository(Protocol):
         tenant_id: str | None,
         provider: str,
         statement: Path,
-        statement_content: bytes,
+        statement_checksum: str,
         business_timezone: str,
         cutoff_time: time,
         run_id: UUID,
@@ -92,6 +92,8 @@ class ReconRepository(Protocol):
         provider_rows: int,
         provider_txns: list[ProviderTransaction],
         results: list[ReconResult],
+        financial_summary: Mapping[str, Any] | None = None,
+        provider_raw_rows: "RawRowStore | None" = None,
     ) -> None: ...
 
     def late_provider_transactions(
@@ -114,6 +116,7 @@ class StoredRun: #Saved run in db
     provider_rows: int
     summary: dict[str, int]
     results: tuple[ReconResult, ...]
+    financial_summary: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -158,10 +161,21 @@ class ValidationIssue:
 class ParseReport:
     rows: tuple[ProviderTransaction, ...]
     issues: tuple[ValidationIssue, ...]
+    raw_rows: "RawRowStore | None" = None
 
     @property
     def valid(self) -> bool:
         return not self.issues
+
+    def close(self) -> None:
+        if self.raw_rows is not None:
+            self.raw_rows.close()
+
+
+class RawRowStore(Protocol):
+    def __iter__(self) -> Iterator[dict[str, Any]]: ...
+
+    def close(self) -> None: ...
 
 
 class ProviderStatementParser(Protocol):
@@ -190,7 +204,8 @@ class ReconQuery(Protocol):
              provider: str | None = None, business_date: date | None = None,
              status: str | None = None) -> list[dict]: ...
 
-    def snapshot(self, run_id: UUID) -> tuple[dict, StoredRun | None] | None: ...
+    def snapshot(self, run_id: UUID, *, include_results: bool = True
+                 ) -> tuple[dict, StoredRun | None] | None: ...
 
     def results_page(self, run_id: UUID, *, result: str | None = None,
                      after: str | None = None, fetch_limit: int = 51

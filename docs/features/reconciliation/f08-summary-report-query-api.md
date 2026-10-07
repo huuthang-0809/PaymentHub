@@ -140,7 +140,8 @@ GET query, exports và metadata đã implement theo contract bên dưới.
 
 `POST /reconciliation-runs` giữ `summary` là counts theo classification và bổ sung
 `financial_summary` với các nhóm số liệu bên dưới. `build_financial_summary` tính từ
-`ReconResult`; rerun dùng cùng hàm trên persisted results, không đọc lại nguồn.
+`ReconResult` khi hoàn tất run và kết quả được lưu trong `job_run_log.metrics`;
+endpoint summary trả snapshot đã lưu mà không load lại toàn bộ results.
 
 | Field | Cách tính |
 |---|---|
@@ -163,7 +164,7 @@ amount hoặc có result `INVALID_DATA`. Currency thiếu được giữ trong n
 `txn_type` thiếu được giữ là `null`. Mỗi nhóm có `system_count`, `provider_count`,
 `totals_by_currency` và `unallocated_currency_count`, dùng cùng quy tắc tiền như
 summary toàn run. Thứ tự nhóm/currency ổn định, không phụ thuộc thứ tự input.
-Cả hai trường mới được tái tạo từ persisted results khi replay.
+Cả hai trường mới nằm trong financial summary snapshot đã persist khi hoàn tất run.
 
 Quy ước tạm thời cho tỷ lệ parent đã refund:
 
@@ -220,7 +221,7 @@ và not-reconcilable vẫn có counts nhưng không có monetary totals.
 
 | Table / Collection | Change |
 |---|---|
-| Run summary/totals | Financial summary tái tạo từ persisted `recon_result`; classification counts vẫn ở `job_run_log.metrics`. |
+| Run summary/totals | Financial summary và classification counts được persist trong `job_run_log.metrics`; run cũ thiếu snapshot mới fallback sang persisted `recon_result`. |
 | `recon_result` | Dùng cho filtered pagination; lưu thêm system provider ID/status, `refund_of` và `refunded_amount_minor` để tái tạo refund summary/cross-check. |
 | Validation issues | New table `[TBD]`. |
 | Export artifact metadata | Chỉ thêm nếu report được lưu thay vì sinh theo request `[Need Confirm]`. |

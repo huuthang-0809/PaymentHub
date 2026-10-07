@@ -7,9 +7,6 @@ import json
 from dataclasses import asdict
 from decimal import Decimal
 
-from reconciliation.application.summary import build_financial_summary
-
-
 def result_dict(row):
     return {key: int(value) if isinstance(value, Decimal) else value
             for key, value in asdict(row).items()}
@@ -50,7 +47,7 @@ def summary_view(snapshot):
         'system_count': stored.system_rows if stored else None,
         'provider_count': stored.provider_rows if stored else None,
         'summary': stored.summary if stored else None,
-        'financial_summary': build_financial_summary(stored.results) if stored else None,
+        'financial_summary': stored.financial_summary if stored else None,
         'meta': {'data_as_of': metadata['finished_at'] or metadata['started_at']},
     }
 
@@ -62,8 +59,8 @@ class QueryReconciliation:
         self.reader = reader
         self.exporter = exporter
 
-    def snapshot(self, run_id, require_completed=False):
-        snapshot = self.reader.snapshot(run_id)
+    def snapshot(self, run_id, require_completed=False, *, include_results=True):
+        snapshot = self.reader.snapshot(run_id, include_results=include_results)
         if snapshot is None:
             raise RunNotFound("Run not found")
         if require_completed and snapshot[1] is None:
@@ -71,7 +68,7 @@ class QueryReconciliation:
         return snapshot
 
     def summary(self, run_id):
-        return summary_view(self.snapshot(run_id))
+        return summary_view(self.snapshot(run_id, include_results=False))
 
     def runs(self, *, run_id=None, region=None, tenant_id=None, provider=None,
              business_date=None, status=None, limit=50, cursor=None, sort='run_id'):

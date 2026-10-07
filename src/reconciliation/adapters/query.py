@@ -47,7 +47,9 @@ class PostgreReconQuery:
                            + where + ' ORDER BY run_id', values)
             return cursor.fetchall()
 
-    def snapshot(self, run_id) -> tuple[dict, StoredRun | None]: 
+    def snapshot(
+        self, run_id, *, include_results=True,
+    ) -> tuple[dict, StoredRun | None]:
         with self.connection.transaction():
             # One consistent view even if a failed run is concurrently retried.
             # Create a snapshot at the moment transaction begin. All select query in transaction will only see data in snapshot:
@@ -66,7 +68,13 @@ class PostgreReconQuery:
                     stored = PostgreReconRepository._load_completed(
                         cursor, run_id, metadata['job_run_id'],
                         metadata['business_date'],
+                        include_results=include_results,
                     )
+                    if not include_results and stored.financial_summary is None:
+                        stored = PostgreReconRepository._load_completed(
+                            cursor, run_id, metadata['job_run_id'],
+                            metadata['business_date'], include_results=True,
+                        )
             return metadata, stored
 
     def results_page(self, run_id, *, result=None, after=None, fetch_limit=51):
@@ -134,10 +142,12 @@ class PooledReconQuery:
         except DatabaseError as error:
             raise QueryUnavailable('QUERY_UNAVAILABLE') from error
 
-    def snapshot(self, run_id):
+    def snapshot(self, run_id, *, include_results=True):
         try:
             with self.pool.connection() as connection:
-                return PostgreReconQuery(connection).snapshot(run_id)
+                return PostgreReconQuery(connection).snapshot(
+                    run_id, include_results=include_results,
+                )
         except DatabaseError as error:
             raise QueryUnavailable('QUERY_UNAVAILABLE') from error
 

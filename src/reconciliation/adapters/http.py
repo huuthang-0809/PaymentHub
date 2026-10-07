@@ -1,4 +1,6 @@
 """Inbound HTTP adapter for the reconciliation bounded context."""
+import shutil
+import tempfile
 from datetime import date, time
 from pathlib import Path
 from typing import Annotated, Literal
@@ -41,8 +43,14 @@ def create_reconciliation_run(
     cutoff_time: Annotated[time, Form()],
     tenant_id: Annotated[str | None, Form()] = None,
 ) -> ReconciliationAcceptedResponse:
-    content = statement.file.read()
-    if not content:
+    with tempfile.NamedTemporaryFile(
+        prefix="reconciliation-", suffix=".csv", delete=False
+    ) as temporary:
+        shutil.copyfileobj(statement.file, temporary)
+        statement_path = Path(temporary.name)
+
+    if statement_path.stat().st_size == 0:
+        statement_path.unlink(missing_ok=True)
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "empty statement")
 
     filename = Path(statement.filename or "provider-statement.csv").name
@@ -54,7 +62,7 @@ def create_reconciliation_run(
         )
         run_id = request.app.state.submit_reconciliation(
             statement=Path(filename),
-            statement_content=content,
+            statement_path=statement_path,
             business_date=business_date,
             region=region,
             tenant_id=tenant_id,
@@ -64,9 +72,13 @@ def create_reconciliation_run(
             run_id=run_id,
         )
     except ValueError as exc:
+        statement_path.unlink(missing_ok=True)
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)
         ) from exc
+    except Exception:
+        statement_path.unlink(missing_ok=True)
+        raise
 
     return ReconciliationAcceptedResponse(run_id=run_id)
 

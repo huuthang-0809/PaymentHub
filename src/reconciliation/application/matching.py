@@ -1,5 +1,5 @@
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import date, time
 from pathlib import Path
 from time import perf_counter
@@ -139,6 +139,7 @@ class RunMatching:
                     ),
                     {},
                 )
+            report = None
             try:
                 report = self.parser.parse(statement_content, statement.name)
                 if not report.valid:
@@ -218,6 +219,8 @@ class RunMatching:
                     claim=claim, system_rows=len(system_rows),
                     provider_rows=len(provider_rows),
                     provider_txns=persisted_provider_rows, results=results,
+                    financial_summary=asdict(financial),
+                    provider_raw_rows=report.raw_rows,
                 )
                 summary = Counter(result.result_type.value for result in results)
                 return (
@@ -243,6 +246,9 @@ class RunMatching:
                     error=error,
                 )
                 raise
+            finally:
+                if report is not None:
+                    report.close()
 
     def _dependency(
         self,

@@ -87,7 +87,7 @@ Không tự làm tròn số vượt precision. Currency ngoài bảng bị Money
 | `transaction_time` | `datetime` | Không | Thời điểm giao dịch provider; ISO timezone-aware khi parse, chuẩn hóa UTC. |
 | `source_file` | `str` | Không | Tên file sao kê nguồn; HTTP lấy basename của tên upload. |
 | `source_row_number` | `int` | Không | Số bản ghi CSV tính cả header; data đầu tiên là 2. CSV nhiều dòng trong ô dùng thứ tự record, không phải dòng vật lý. |
-| `raw` | `dict[str, Any]` | Không | Payload nguồn phục vụ lưu/truy vết; không trả qua API query hoặc export kết quả. |
+| `raw` | `dict[str, Any]` | Không | Payload nguồn phục vụ lưu/truy vết; raw CSV được spill vào file tạm trong lúc matching, đọc tuần tự khi persist và không trả qua API query/export. |
 
 ## 5. ReconResult — evidence và cột export
 
@@ -251,7 +251,10 @@ Không có STATUS_MISMATCH trong model hiện tại. MATCHED không chứng minh
 
 ## 9. Báo cáo tài chính và công thức metric
 
-Nguồn: [summary.py](../src/reconciliation/application/summary.py). Tất cả aggregate được dựng lại từ snapshot ReconResult đã commit; không đọc lại Mongo khi query/replay.
+Nguồn: [summary.py](../src/reconciliation/application/summary.py). Aggregate được tính
+một lần từ `ReconResult` khi hoàn tất run và lưu trong `job_run_log.metrics`;
+endpoint summary đọc snapshot này, không đọc lại Mongo hoặc toàn bộ `recon_result`.
+Run cũ chưa có snapshot vẫn được tái tạo từ persisted results để tương thích.
 
 Quy ước: `A` = toàn bộ dòng kết quả; `F` = A bỏ DUPLICATE và NOT_RECONCILABLE. Dấu hiệu có phía system là system_txn_id khác null; có phía provider là source_row_number khác null. Các tổng tài chính bên dưới dùng F, không mặc định lọc giao dịch SUCCESS.
 

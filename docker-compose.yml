@@ -66,6 +66,8 @@ services:
       context: .
       dockerfile: docker/api.Dockerfile
     command: ["uvicorn", "bootstrap.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    mem_limit: 8g
+    mem_reservation: 6g
     environment:
       DATABASE_URL: postgresql://paymenthub:${POSTGRES_PASSWORD:-paymenthub}@postgres:5432/paymenthub
       MONGO_URI: mongodb://mongodb:27017
@@ -96,7 +98,7 @@ services:
       RECON_SCHEDULER_METRICS_PORT: 9101
       RECON_SCHEDULES_JSON: ${RECON_SCHEDULES_JSON:-[]}
       RECON_API_TIMEOUT_SECONDS: ${RECON_API_TIMEOUT_SECONDS:-30}
-      RECON_STATUS_POLL_SECONDS: ${RECON_STATUS_POLL_SECONDS:-1}
+      RECON_STATUS_POLL_SECONDS: ${RECON_STATUS_POLL_SECONDS:-60}
       RECON_STATUS_TIMEOUT_SECONDS: ${RECON_STATUS_TIMEOUT_SECONDS:-3600}
       RECON_SIMULATION_START_DATE: ${SIMULATION_START_DATE:-}
       RECON_SIMULATION_DAYS: ${SIMULATION_DAYS:-1}
