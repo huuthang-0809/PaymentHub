@@ -6,6 +6,7 @@ import base64
 import json
 from dataclasses import asdict
 from decimal import Decimal
+from uuid import UUID
 
 def result_dict(row):
     return {key: int(value) if isinstance(value, Decimal) else value
@@ -28,16 +29,6 @@ def encode_cursor(scope, after):
     return base64.urlsafe_b64encode(json.dumps({
         'scope': scope, 'after': after,
     }).encode()).decode()
-
-
-def paginate(items, limit, cursor, scope, key):
-    after = decode_cursor(cursor, scope)
-    remaining = [item for item in items if after is None or key(item) > after]
-    page = remaining[:limit]
-    next_cursor = None
-    if len(remaining) > limit:
-        next_cursor = encode_cursor(scope, key(page[-1]))
-    return page, next_cursor
 
 
 def summary_view(snapshot):
@@ -76,9 +67,20 @@ class QueryReconciliation:
                        tenant_id=tenant_id,
                        provider=provider.strip().upper() if provider else None,
                        business_date=business_date, status=status)
-        rows = self.reader.runs(**filters)
         scope = ['runs', *[str(value) for value in filters.values()], sort]
-        page, next_cursor = paginate(rows, limit, cursor, scope, lambda row: str(row['run_id']))
+        after_value = decode_cursor(cursor, scope)
+        try:
+            after = UUID(after_value) if after_value is not None else None
+        except (TypeError, ValueError) as error:
+            raise ValueError('Invalid cursor for this query') from error
+        rows = self.reader.runs(
+            **filters, after=after, fetch_limit=limit + 1,
+        )
+        page = rows[:limit]
+        next_cursor = (
+            encode_cursor(scope, str(page[-1]['run_id']))
+            if len(rows) > limit else None
+        )
         return dict(items=page, next_cursor=next_cursor, meta={'data_as_of': datetime.now(UTC)})
 
     def results(self, run_id, *, result=None, limit=50, cursor=None, sort='result_key'):
