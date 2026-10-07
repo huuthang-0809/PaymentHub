@@ -171,6 +171,32 @@ def test_repository_rejects_unknown_business_timezone() -> None:
         PostgreReconRepository(connection, business_timezone="Not/AZone")
 
 
+def test_loads_completed_late_rows_for_target_period() -> None:
+    connection, _, cursor = _connection()
+    cursor.fetchall.return_value = [(
+        "ONEPAY", "VN", None, "late-001", None, "merchant-ref",
+        "merchant-001", 100, "VND", "SUCCESS", "PAYMENT",
+        datetime(2026, 9, 22, 3, tzinfo=timezone.utc),
+        "onepay-old.csv", 4, True, {"source": "old"},
+    )]
+
+    rows = PostgreReconRepository(connection).late_provider_transactions(
+        business_date=date(2026, 9, 23), region=Region.VN,
+        tenant_id=None, provider="ONEPAY",
+        start_utc=datetime(2026, 9, 22, 2, tzinfo=timezone.utc),
+        end_utc=datetime(2026, 9, 23, 2, tzinfo=timezone.utc),
+    )
+
+    assert len(rows) == 1
+    assert rows[0].provider_txn_id == "late-001"
+    assert rows[0].late_arriving is True
+    assert cursor.execute.call_args.args[1] == (
+        date(2026, 9, 23), "VN", None, "ONEPAY",
+        datetime(2026, 9, 22, 2, tzinfo=timezone.utc),
+        datetime(2026, 9, 23, 2, tzinfo=timezone.utc),
+    )
+
+
 @pytest.mark.parametrize("status", ["COMPLETED", "FAILED"])
 def test_rerun_rejects_changed_cutoff_without_changing_identity(status) -> None:
     connection, _, cursor = _connection()

@@ -34,6 +34,9 @@ def _write_documents(
 ) -> None:
     collection = client[database][COLLECTION]
     generated_ids = [document["_id"] for document in documents]
+    collection.delete_many({
+        "testBatchId": {"$exists": True, "$ne": batch_id},
+    })
     collection.delete_many(
         {"testBatchId": batch_id, "_id": {"$nin": generated_ids}}
     )

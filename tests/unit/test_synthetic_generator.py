@@ -1,6 +1,7 @@
 import json
 from collections import Counter
 from dataclasses import asdict
+from datetime import date, time
 from decimal import Decimal
 
 import pytest
@@ -9,6 +10,7 @@ from canonical.adapters.asia import asia_to_canonical
 from canonical.adapters.india import india_to_canonical
 from canonical.adapters.vn import vn_to_canonical
 from reconciliation.adapters import CsvFixtureParser
+from reconciliation.application.calendar import resolve_business_period
 from reconciliation.domain import MatchingEngine, ReconResultType
 from tests.data_generator.generator import (
     ASIA_MAPPING,
@@ -163,6 +165,28 @@ def test_provider_statements_are_deterministic_and_parseable() -> None:
         report = CsvFixtureParser().parse(content.encode(), filename)
         assert report.valid, (filename, report.issues)
         assert report.rows, filename
+
+
+def test_provider_statements_fit_their_business_date_period() -> None:
+    config = GeneratorConfig(seed=20260923, records_per_region=32)
+    datasets, _ = generate_dataset(config)
+    statements = generate_provider_statements(datasets, config)
+    timezones = {
+        "onepay_20260923.csv": "Asia/Ho_Chi_Minh",
+        "espay_asia-id_20260923.csv": "Asia/Jakarta",
+        "2c2p_asia-ph_20260923.csv": "Asia/Manila",
+        "razorpay_20260923.csv": "Asia/Kolkata",
+    }
+
+    for filename, content in statements.items():
+        period = resolve_business_period(
+            date(2026, 9, 23), timezones[filename], time(2),
+        )
+        rows = CsvFixtureParser().parse(content.encode(), filename).rows
+        assert all(
+            period.start_utc <= row.transaction_time < period.end_utc
+            for row in rows
+        ), filename
 
 
 def test_provider_statements_do_not_depend_on_canonical_adapter_output() -> None:

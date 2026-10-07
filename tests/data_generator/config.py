@@ -74,7 +74,9 @@ class GeneratorConfig:
     @property
     def base_time(self) -> datetime:
         parsed = datetime.strptime(str(self.seed), "%Y%m%d")
-        return parsed.replace(tzinfo=UTC)
+        # The seed labels the business date/file. With the shared 02:00 local
+        # cutoff, transactions for that period occur on the previous UTC day.
+        return parsed.replace(tzinfo=UTC) - timedelta(days=1)
 
 
 @dataclass(frozen=True, slots=True)

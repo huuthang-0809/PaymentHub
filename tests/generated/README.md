@@ -26,13 +26,18 @@ docker compose run --rm generator
 ```
 
 Các document dùng `_id` tất định và được ghi bằng bulk upsert, vì vậy chạy lại
-cùng seed không làm tăng số lượng document. Có thể đổi quy mô hoặc seed mà không
-cần sửa code:
+cùng seed không làm tăng số lượng document. Khi đổi seed, generator thay các
+batch synthetic cũ trong mỗi database; document không có `testBatchId` không bị
+xóa. Có thể đổi quy mô hoặc seed mà không cần sửa code:
 
 ```bash
 GENERATOR_SEED=20260924 RECORDS_PER_REGION=32 \
   docker compose run --rm generator
 ```
+
+`GENERATOR_SEED` là business date dùng trong tên file. Timestamp giao dịch được
+đặt vào ngày UTC liền trước để nằm trong kỳ kết thúc lúc `02:00` theo timezone
+của VN, India và từng tenant Asia.
 
 Đáp án được ghi vào `tests/generated/ground_truth.json`. Các sao kê provider
 được ghi vào `tests/generated/provider-statements/`, mỗi reconciliation scope
