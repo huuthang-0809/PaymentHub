@@ -2,7 +2,7 @@
 from decimal import Decimal
 
 from psycopg import Error as DatabaseError
-from reconciliation.application.ports import QueryUnavailable
+from reconciliation.application.ports import QueryUnavailable, RunInProgress, RunNotFound
 
 from psycopg.rows import dict_row
 from reconciliation.adapters.postgres import PostgreReconRepository
@@ -93,6 +93,30 @@ class PostgreReconQuery:
                 return metadata, rows
 
 
+class PostgreReconRunDeleter:
+    def __init__(self, connection):
+        self.connection = connection
+
+    def __call__(self, run_id):
+        with self.connection.transaction(), self.connection.cursor() as cursor:
+            cursor.execute(
+                'SELECT job_run_id, status FROM recon_run '
+                'WHERE run_id = %s FOR UPDATE',
+                (run_id,),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                raise RunNotFound('Run not found')
+            job_run_id, run_status = row
+            if run_status == 'RUNNING':
+                raise RunInProgress('Running reconciliation cannot be deleted')
+            cursor.execute('DELETE FROM recon_run WHERE run_id = %s', (run_id,))
+            cursor.execute(
+                'DELETE FROM job_run_log WHERE job_run_id = %s',
+                (job_run_id,),
+            )
+
+
 class PooledReconQuery:
     """Own connection lifetime and translate driver errors at the boundary."""
 
@@ -117,5 +141,17 @@ class PooledReconQuery:
         try:
             with self.pool.connection() as connection:
                 return PostgreReconQuery(connection).results_page(run_id, **parameters)
+        except DatabaseError as error:
+            raise QueryUnavailable('QUERY_UNAVAILABLE') from error
+
+
+class PooledReconRunDeleter:
+    def __init__(self, pool):
+        self.pool = pool
+
+    def __call__(self, run_id):
+        try:
+            with self.pool.connection() as connection:
+                PostgreReconRunDeleter(connection)(run_id)
         except DatabaseError as error:
             raise QueryUnavailable('QUERY_UNAVAILABLE') from error

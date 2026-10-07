@@ -51,7 +51,10 @@ def classify_provider_rows(
     persisted: list[ProviderTransaction] = []
     for row in rows:
         in_period = period.start_utc <= row.transaction_time < period.end_utc
-        classified = replace(row, late_arriving=row.transaction_time >= period.end_utc)
+        if row.transaction_time >= period.end_utc:
+            classified = replace(row, late_arriving=True) #ProviderTransaction is a frozen data class -> use replace
+        else:
+            classified = replace(row, late_arriving=False)
         persisted.append(classified)
         if in_period:
             eligible.append(classified)

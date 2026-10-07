@@ -77,6 +77,17 @@ class ReconRepository(Protocol):
         results: list[ReconResult],
     ) -> None: ...
 
+    def late_provider_transactions(
+        self,
+        *,
+        business_date: date,
+        region: Region,
+        tenant_id: str | None,
+        provider: str,
+        start_utc: datetime,
+        end_utc: datetime,
+    ) -> tuple[ProviderTransaction, ...]: ...
+
     def fail_run(self, claim: "RunClaim", error: Exception) -> None: ...
 
 
@@ -160,6 +171,10 @@ class ReconQuery(Protocol):
     def results_page(self, run_id: UUID, *, result: str | None = None,
                      after: str | None = None, fetch_limit: int = 51
                      ) -> tuple[dict, list[dict]] | None: ...
+
+
+class ReconRunDeleter(Protocol):
+    def __call__(self, run_id: UUID) -> None: ...
 
 
 class ReportExporter(Protocol):

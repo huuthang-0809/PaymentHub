@@ -2,7 +2,7 @@ import hashlib
 import json
 from collections import Counter
 from contextlib import contextmanager
-from datetime import date, time
+from datetime import date, datetime, time
 from pathlib import Path
 from typing import Iterator
 from uuid import UUID, uuid4
@@ -336,6 +336,71 @@ class PostgreReconRepository:
             )
             if cursor.rowcount != 1:
                 raise RuntimeError("Job is no longer claimable")
+
+    def late_provider_transactions(
+        self,
+        *,
+        business_date: date,
+        region: Region,
+        tenant_id: str | None,
+        provider: str,
+        start_utc: datetime,
+        end_utc: datetime,
+    ) -> tuple[ProviderTransaction, ...]:
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT p.provider, p.region, p.tenant_id, p.provider_txn_id,
+                       p.provider_ref_id, p.merchant_ref, p.merchant_id,
+                       p.amount_minor, p.currency, p.status, p.txn_type,
+                       p.transaction_time, p.source_file, p.source_row_number,
+                       p.late_arriving, p.raw
+                FROM provider_txn AS p
+                JOIN recon_run AS r
+                  ON r.run_id = p.run_id
+                 AND r.job_run_id = p.job_run_id
+                 AND r.business_date = p.business_date
+                WHERE p.business_date < %s
+                  AND r.status = 'COMPLETED'
+                  AND p.late_arriving = true
+                  AND p.region = %s
+                  AND p.tenant_id IS NOT DISTINCT FROM %s
+                  AND p.provider = %s
+                  AND p.transaction_time >= %s
+                  AND p.transaction_time < %s
+                ORDER BY p.transaction_time, p.business_date,
+                         p.source_file, p.source_row_number
+                """,
+                (
+                    business_date,
+                    region.value,
+                    tenant_id,
+                    provider,
+                    start_utc,
+                    end_utc,
+                ),
+            )
+            return tuple(
+                ProviderTransaction(
+                    provider=row[0],
+                    region=Region(row[1]),
+                    tenant_id=row[2],
+                    provider_txn_id=row[3],
+                    provider_ref_id=row[4],
+                    merchant_ref=row[5],
+                    merchant_id=row[6],
+                    amount_minor=int(row[7]),
+                    currency=row[8],
+                    status=row[9],
+                    txn_type=TxnType(row[10]),
+                    transaction_time=row[11],
+                    source_file=row[12],
+                    source_row_number=row[13],
+                    late_arriving=row[14],
+                    raw=row[15],
+                )
+                for row in cursor.fetchall()
+            )
 
     def fail_run(self, claim: RunClaim, error: Exception) -> None:
         # Separate transaction: detail writes have already rolled back.

@@ -11,7 +11,8 @@ from pydantic import BaseModel, Field
 
 from reconciliation.application import InvalidProviderStatement, RunInProgress
 from reconciliation.application.ports import (
-    ExportFailed, MatchingRunner, QueryUnavailable, RunNotCompleted, RunNotFound,
+    ExportFailed, MatchingRunner, QueryUnavailable, ReconRunDeleter,
+    RunNotCompleted, RunNotFound,
 )
 from reconciliation.application.summary import FinancialSummary
 from reconciliation.domain import ReconResultType
@@ -93,10 +94,19 @@ def _query(operation, **parameters):
         raise HTTPException(404, str(error)) from error
     except RunNotCompleted as error:
         raise HTTPException(409, str(error)) from error
+    except RunInProgress as error:
+        raise HTTPException(409, str(error)) from error
     except ExportFailed as error:
         raise HTTPException(500, 'EXPORT_FAILED') from error
     except ValueError as error:
         raise HTTPException(422, str(error)) from error
+
+
+@router.delete('/{run_id}', status_code=status.HTTP_204_NO_CONTENT)
+def delete_reconciliation_run(request: Request, run_id: UUID) -> Response:
+    deleter: ReconRunDeleter = request.app.state.delete_reconciliation_run
+    _query(deleter, run_id=run_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get('')

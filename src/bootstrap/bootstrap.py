@@ -15,7 +15,7 @@ from canonical.adapters.vn import MongoVnSource, VNMapping
 from reconciliation.adapters import CsvFixtureParser, PostgreReconRepository
 from reconciliation.adapters.metrics import ReconciliationMetrics
 from reconciliation.application.query import QueryReconciliation
-from reconciliation.adapters.query import PooledReconQuery
+from reconciliation.adapters.query import PooledReconQuery, PooledReconRunDeleter
 from reconciliation.adapters.report import export_report
 from reconciliation.application import MatchingRunOutput, RunMatching
 from shared_kernel import Region
@@ -153,6 +153,7 @@ async def lifespan(app: FastAPI):
     app.state.query_reconciliation = QueryReconciliation(
         PooledReconQuery(postgres_pool), export_report,
     )
+    app.state.delete_reconciliation_run = PooledReconRunDeleter(postgres_pool)
     app.state.run_reconciliation = run_reconciliation
     try:
         yield
