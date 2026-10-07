@@ -77,6 +77,23 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  reconciliation-scheduler:
+    profiles: ["scheduler"]
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    command: ["python", "-m", "bootstrap.scheduler"]
+    environment:
+      RECON_API_URL: http://api:8000
+      RECON_STATEMENT_DIR: /statements
+      RECON_SCHEDULER_POLL_SECONDS: ${RECON_SCHEDULER_POLL_SECONDS:-60}
+      RECON_SCHEDULES_JSON: ${RECON_SCHEDULES_JSON:-[]}
+    volumes:
+      - ${RECON_STATEMENT_DIR:-./tests/generated/provider-statements}:/statements:ro
+    depends_on:
+      api:
+        condition: service_started
+
   verify-data:
     build:
       context: .
