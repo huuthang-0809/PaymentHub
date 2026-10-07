@@ -1,19 +1,10 @@
-"""Generate daily fixtures and run one virtual month through the scheduler."""
+"""Generate daily fixtures for a virtual month."""
 
-import json
 import os
-import time as clock
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import date, timedelta
 from pathlib import Path
-from urllib.request import urlopen
-
+import json
 from pymongo import MongoClient
-
-from reconciliation.adapters.daily_scheduler import (
-    DailyReconciliationScheduler,
-    HttpReconciliationSubmitter,
-    load_schedules,
-)
 
 from .config import scope_specs
 from .generator import (
@@ -24,44 +15,6 @@ from .generator import (
 )
 from .mongo_seed import _write_document_iterator
 from .oracle import write_provider_statement
-
-
-DEFAULT_SCHEDULES = json.dumps([
-    {
-        "region": "VN",
-        "provider": "ONEPAY",
-        "business_timezone": "Asia/Ho_Chi_Minh",
-        "cutoff_time": "02:00",
-        "run_time": "03:00",
-        "filename": "onepay_{business_date_compact}.csv",
-    },
-    {
-        "region": "ASIA",
-        "tenant_id": "asia-id",
-        "provider": "ESPAY",
-        "business_timezone": "Asia/Jakarta",
-        "cutoff_time": "02:00",
-        "run_time": "03:00",
-        "filename": "espay_asia-id_{business_date_compact}.csv",
-    },
-    {
-        "region": "ASIA",
-        "tenant_id": "asia-ph",
-        "provider": "2C2P",
-        "business_timezone": "Asia/Manila",
-        "cutoff_time": "02:00",
-        "run_time": "03:00",
-        "filename": "2c2p_asia-ph_{business_date_compact}.csv",
-    },
-    {
-        "region": "INDIA",
-        "provider": "RAZORPAY",
-        "business_timezone": "Asia/Kolkata",
-        "cutoff_time": "02:00",
-        "run_time": "03:00",
-        "filename": "razorpay_{business_date_compact}.csv",
-    },
-])
 
 
 def simulation_dates(start: date, days: int) -> tuple[date, ...]:
@@ -93,59 +46,39 @@ def missing_statement_targets(
     }
 
 
-def _wait_for_api(api_url: str) -> None:
-    health_url = api_url.rstrip("/") + "/health"
-    for _ in range(60):
-        try:
-            with urlopen(health_url, timeout=2) as response:
-                if response.status == 200:
-                    return
-        except OSError:
-            clock.sleep(1)
-    raise RuntimeError(f"API did not become ready: {health_url}")
-
-
 def _emit(event: str, context: dict[str, object]) -> None:
     print(json.dumps({"event": event, **context}, separators=(",", ":")), flush=True)
 
 
-def main() -> None:
+def generate_data() -> None:
     start = date.fromisoformat(os.getenv("SIMULATION_START_DATE", "2026-09-01"))
     days = int(os.getenv("SIMULATION_DAYS", "30"))
-    seconds_per_day = float(os.getenv("SIMULATION_SECONDS_PER_DAY", "2"))
-    if seconds_per_day < 0:
-        raise ValueError("SIMULATION_SECONDS_PER_DAY must not be negative")
     missing_statement_count = int(
         os.getenv("SIMULATION_MISSING_STATEMENT_COUNT", "2")
     )
-
+    write_ground_truth = (
+        os.getenv("SIMULATION_WRITE_GROUND_TRUTH", "false").lower() == "true"
+    )
     records = int(os.getenv("RECORDS_PER_REGION", "100"))
     mongo_uri = os.getenv("MONGO_URI", "mongodb://mongodb:27017")
-    api_url = os.getenv("RECON_API_URL", "http://api:8000")
     output = Path(os.getenv("SIMULATION_OUTPUT_DIR", "/test-data/month-simulation"))
     statements_dir = output / "provider-statements"
     truth_dir = output / "ground-truth"
     statements_dir.mkdir(parents=True, exist_ok=True)
-    truth_dir.mkdir(parents=True, exist_ok=True)
-
-    _wait_for_api(api_url)
-    scheduler = DailyReconciliationScheduler(
-        statements_dir,
-        load_schedules(DEFAULT_SCHEDULES),
-        HttpReconciliationSubmitter(api_url, timeout_seconds=300),
-        _emit,
-    )
+    if write_ground_truth:
+        truth_dir.mkdir(parents=True, exist_ok=True)
     dates = simulation_dates(start, days)
     missing_targets = missing_statement_targets(dates, missing_statement_count)
 
     with MongoClient(mongo_uri, serverSelectionTimeoutMS=10_000) as client:
         client.admin.command("ping")
-        for index, business_date in enumerate(dates):
+        for business_date in dates:
             config = GeneratorConfig(
                 seed=int(business_date.strftime("%Y%m%d")),
                 records_per_region=records,
             )
-            for scope in scope_specs(config):
+            scopes = scope_specs(config)
+            for scope in scopes:
                 _write_document_iterator(
                     client,
                     scope.database,
@@ -160,48 +93,33 @@ def main() -> None:
                     scope_document_count(config, scope),
                 )
 
-            missing_schedule_index = missing_targets.get(business_date)
-            if missing_schedule_index is not None:
-                missing_schedule = scheduler.schedules[missing_schedule_index]
-                missing_statement = statements_dir / missing_schedule.statement_name(
-                    business_date
-                )
+            missing_scope_index = missing_targets.get(business_date)
+            if missing_scope_index is not None:
+                missing_scope = scopes[missing_scope_index]
+                missing_statement = statements_dir / missing_scope.filename
                 missing_statement.unlink(missing_ok=True)
                 _emit(
                     "statement_removed",
                     {
                         "business_date": business_date.isoformat(),
-                        "region": missing_schedule.region.value,
-                        "tenant_id": missing_schedule.tenant_id,
-                        "provider": missing_schedule.provider,
+                        "region": missing_scope.region.value,
+                        "tenant_id": missing_scope.tenant_id,
+                        "provider": missing_scope.provider,
                         "filename": missing_statement.name,
                     },
                 )
 
-            write_streaming_ground_truth(
-                truth_dir / f"{business_date.isoformat()}.json", config
-            )
-
-            # Noon UTC is after every configured 03:00 local run time while
-            # remaining on the same calendar date for all four Asian scopes.
-            virtual_now = datetime.combine(business_date, time(12), UTC)
-            submitted = scheduler.run_due(virtual_now)
-            expected_submissions = len(scheduler.schedules) - (
-                1 if missing_schedule_index is not None else 0
-            )
-            if submitted != expected_submissions:
-                raise RuntimeError(
-                    f"{business_date}: submitted {submitted}/"
-                    f"{expected_submissions} expected reconciliation runs"
+            if write_ground_truth:
+                write_streaming_ground_truth(
+                    truth_dir / f"{business_date.isoformat()}.json", config
                 )
-            _emit(
-                "virtual_day_completed",
-                {"business_date": business_date.isoformat(), "day": index + 1},
-            )
-            if business_date != dates[-1]:
-                clock.sleep(seconds_per_day)
+            _emit("simulation_data_generated", {"business_date": business_date.isoformat()})
 
-    _emit("month_simulation_completed", {"start": start.isoformat(), "days": days})
+    _emit("simulation_generation_completed", {"start": start.isoformat(), "days": days})
+
+
+def main() -> None:
+    generate_data()
 
 
 if __name__ == "__main__":

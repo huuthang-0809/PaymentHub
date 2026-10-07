@@ -256,9 +256,9 @@ def _provider_only_fixture(
         "currency": scope.currency,
         "status": "SUCCESS",
         "txn_type": TxnType.PAYMENT.value,
-        "transaction_time": (
-            config.base_time + timedelta(hours=12, seconds=cycle)
-        ).isoformat(),
+        "transaction_time": base_case(
+            config, scope, cycle * len(MUTATION_CYCLE) + 7
+        ).transaction_time.isoformat(),
     }
     row = ProviderFixtureRow(fixture_id, case_id, values)
     expected = _expected_provider_only(

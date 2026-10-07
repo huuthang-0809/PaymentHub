@@ -131,10 +131,8 @@ def test_pipeline_accepts_adapter_output_without_loading_mongo(tmp_path: Path) -
     assert output.system_rows == 1
     assert output.provider_rows == 1
     assert output.summary == {"MATCHED": 1}
-    totals = output.financial_summary.totals_by_currency[0]
-    assert totals.system_amount_minor == totals.provider_amount_minor == 149000
-    assert totals.delta_amount_minor == 0
-    assert output.financial_summary.refund_parent_metrics.refunded_transaction_rate == "0.000000"
+    assert not hasattr(output, "results")
+    assert not hasattr(output, "financial_summary")
     assert source.request == (
         Region.VN, None, "ONEPAY",
         datetime(2026, 9, 21, 2, tzinfo=UTC),
@@ -158,7 +156,10 @@ def test_pipeline_accepts_adapter_output_without_loading_mongo(tmp_path: Path) -
         ("repository", "complete_run", "success"),
     }
     repository.existing = StoredRun(
-        output.system_rows, output.provider_rows, output.summary, output.results,
+        output.system_rows,
+        output.provider_rows,
+        output.summary,
+        tuple(repository.saved["results"]),
     )
     replay = RunMatching(source, CsvFixtureParser(), repository).execute(
         statement=statement, statement_content=b"skip parser on replay",
@@ -167,7 +168,7 @@ def test_pipeline_accepts_adapter_output_without_loading_mongo(tmp_path: Path) -
         cutoff_time=time(2), run_id=run_id,
     )
     assert replay.replayed is True
-    assert replay.financial_summary == output.financial_summary
+    assert replay.summary == output.summary
 
 
 def test_completed_replay_skips_parser_source_and_matching(tmp_path: Path) -> None:

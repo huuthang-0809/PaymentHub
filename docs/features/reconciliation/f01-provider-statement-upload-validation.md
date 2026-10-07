@@ -42,17 +42,18 @@ sequenceDiagram
 
     Client->>API: POST /reconciliation-runs with multipart statement and scope
     API->>API: Reject empty file and sanitize filename
-    API->>Parser: Parse bytes using fixture contract
+    API-->>Client: 202 Accepted + run_id
+    API->>Parser: Background worker parses bytes using fixture contract
     Parser->>Parser: Validate encoding, delimiter, headers and rows
     Parser-->>UseCase: ParseReport(rows, issues)
     alt Parse issues exist
         UseCase-->>API: InvalidProviderStatement
-        API-->>Client: 422 validation error
+        UseCase->>UseCase: Mark run FAILED
     else Structurally valid
         UseCase->>UseCase: Validate region, tenant and provider scope
         alt Row is outside requested scope
             UseCase-->>API: InvalidProviderStatement
-            API-->>Client: 422 scope error
+            UseCase->>UseCase: Mark run FAILED
         else Scope valid
             UseCase-->>API: Continue reconciliation pipeline
         end
@@ -80,13 +81,14 @@ sequenceDiagram
 
 | Method | Endpoint | Description |
 |---|---|---|
-| POST | `/reconciliation-runs` | Upload statement và chạy reconciliation đồng bộ. |
+| POST | `/reconciliation-runs` | Upload statement, persist `PENDING` run và enqueue background processing. |
+| GET | `/reconciliation-runs?run_id={run_id}` | Dùng endpoint danh sách hiện có để poll `PENDING`, `RUNNING`, `COMPLETED` hoặc `FAILED`. |
 
 ### Request/Response
 
 - Request `multipart/form-data`: `statement`, `business_date`, `region`, `provider`, `tenant_id?`.
-- Success `201`: `run_id`, `job_run_id`, `system_rows`, `provider_rows`, `summary`.
-- Invalid input `422`: FastAPI detail string; structured validation response contract chưa được chốt.
+- Accepted `202`: `run_id`, `status=PENDING`.
+- Empty upload/form/timezone lỗi trả `422`; CSV/scope validation trong background được phản ánh bằng trạng thái `FAILED`.
 
 ### Database
 

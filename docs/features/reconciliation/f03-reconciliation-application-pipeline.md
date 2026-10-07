@@ -8,7 +8,7 @@
 | Owner | `[TBD]` |
 | Ticket | `[TBD]` |
 | Status | `Implemented` |
-| Purpose | Điều phối parse, scope validation, system load, filtering, matching, persistence và tạo command response. |
+| Purpose | Điều phối background reconciliation, parse, scope validation, system load, filtering, matching và persistence. |
 
 ## 2. Requirements
 
@@ -19,13 +19,16 @@
 - Load system transactions qua port theo business date.
 - Loại `is_deleted` và `is_test_data` trước matching.
 - Tạo `run_id` nếu caller không truyền.
-- Lưu run rồi trả row counts, result counts và detailed result tuple cho internal caller.
+- API tạo durable `PENDING` run và trả `202 Accepted` cùng `run_id`.
+- Background worker lưu run rồi chỉ trả row counts và result summary cho internal caller.
+- Scheduler lọc `run_id` qua endpoint danh sách hiện có cho đến `COMPLETED` hoặc `FAILED`.
 
 ### Non-Functional Requirements
 
 - Application phụ thuộc ports thay vì concrete Mongo/PostgreSQL implementation.
 - Composition root chọn source theo region và quản lý connection pools.
-- Pipeline hiện synchronous; SLA và async/background execution `[Need Confirm]`.
+- Background executor mặc định một worker, cấu hình qua `RECON_WORKER_COUNT`.
+- Provider transactions và reconciliation results được insert theo batch 10.000.
 
 ## 3. Design
 
@@ -43,7 +46,9 @@ sequenceDiagram
     participant Repo as ReconRepository
 
     Client->>API: Submit statement and reconciliation scope
-    API->>UseCase: Execute command
+    API->>Repo: Persist PENDING run
+    API-->>Client: 202 Accepted + run_id
+    API->>UseCase: Execute command in background worker
     UseCase->>Parser: Parse and validate statement
     Parser-->>UseCase: Provider rows
     UseCase->>Source: Load system rows for business date and scope
@@ -53,15 +58,16 @@ sequenceDiagram
     Engine-->>UseCase: Detailed results
     UseCase->>Repo: Persist run, provider rows and results
     Repo-->>UseCase: job_run_id
-    UseCase-->>API: MatchingRunOutput and count summary
-    API-->>Client: 201 Created
+    UseCase-->>Repo: Mark COMPLETED or FAILED
+    Client->>API: Poll run status
+    API-->>Client: PENDING/RUNNING/COMPLETED/FAILED
 ```
 
 ### Processing
 
 1. Parse provider statement và validate command scope.
 2. Load/filter system rows và invoke domain matching.
-3. Persist provider rows/results, count classifications và return output.
+3. Persist provider rows/results theo batch 10.000, count classifications và return summary-only output.
 
 ### Components
 
@@ -78,13 +84,14 @@ sequenceDiagram
 
 | Method | Endpoint | Description |
 |---|---|---|
-| POST | `/reconciliation-runs` | Entry point hiện tại của pipeline. |
+| POST | `/reconciliation-runs` | Enqueue run và trả `202 Accepted`. |
+| GET | `/reconciliation-runs?run_id={run_id}` | Poll metadata qua endpoint danh sách, không load result details. |
 | GET | `/health` | Health response tĩnh; chưa probe dependencies. |
 
 ### Request/Response
 
 - Xem F01 cho HTTP contract.
-- Internal output còn có `results`, nhưng HTTP response chỉ expose summary.
+- Internal matching output không còn chứa detailed `results`; chi tiết được đọc phân trang từ persistence.
 
 ### Database
 
@@ -97,10 +104,10 @@ sequenceDiagram
 
 | Scenario | Expected Behavior |
 |---|---|
-| Happy path | Trả completed run summary sau khi DB commit. |
+| Happy path | Trả `202`, sau đó status chuyển `PENDING → RUNNING → COMPLETED`. |
 | Invalid input | Parse/scope/domain `ValueError` được API map sang 422. |
 | Duplicate request | Chưa return existing run; xem F06. |
-| Timeout / dependency error | Mongo/PostgreSQL error hiện thành unhandled 500. |
+| Timeout / dependency error | Background run chuyển `FAILED`; scheduler không giữ một HTTP request dài trong lúc xử lý. |
 | Retry / concurrent processing | Chưa có idempotent rerun/concurrency control của F06. |
 
 ## 6. Testing

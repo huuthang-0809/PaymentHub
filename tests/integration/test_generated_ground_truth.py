@@ -3,6 +3,8 @@
 This test is intentionally opt-in because it needs the disposable PostgreSQL and
 MongoDB instances populated by the generator.
 
+docker compose run --rm generator
+
 F06_TEST_DATABASE_URL="postgresql://paymenthub:paymenthub@localhost:5432/paymenthub" \
 F11_TEST_MONGO_URI="mongodb://localhost:27017" \
 pytest tests/integration

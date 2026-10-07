@@ -21,6 +21,7 @@ from .config import (
     GeneratorConfig,
     ScopeSpec,
     base_case,
+    scope_document_count,
     scope_specs,
 )
 from .oracle import (
@@ -118,14 +119,6 @@ def generate_dataset(
         "reconciliation": reconciliation_oracle,
     }
     return datasets, ground_truth
-
-
-def scope_document_count(config: GeneratorConfig, scope: ScopeSpec) -> int:
-    if scope.database in {DATABASE_ASIA_ID, DATABASE_ASIA_PH}:
-        if scope.database == DATABASE_ASIA_ID:
-            return (config.records_per_region + 1) // 2
-        return config.records_per_region // 2
-    return config.records_per_region
 
 
 def iter_scope_documents(
