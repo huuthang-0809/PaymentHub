@@ -1,4 +1,7 @@
+from bisect import bisect_left, bisect_right
+from collections import defaultdict, deque
 from dataclasses import replace
+from datetime import timedelta
 
 from canonical.domain import CanonicalTransaction
 from shared_kernel import AmountStatus, Region, TxnType
@@ -121,7 +124,26 @@ class MatchingEngine:
     ) -> tuple:
         pairs = []
         unmatched_sys = []
-        unmatched_prov = list(provider_txns)
+
+        if currency_mismatch:
+            provider_index: dict[tuple, dict[str, deque[int]]] = defaultdict(
+                lambda: defaultdict(deque)
+            )
+            for index, provider_txn in enumerate(provider_txns):
+                identifier = getattr(provider_txn, key_name)
+                if identifier:
+                    currency = self._scope(provider_txn)[3]
+                    provider_index[
+                        (self._identity_scope(provider_txn), identifier)
+                    ][currency].append(index)
+        else:
+            exact_index: dict[tuple, deque[int]] = defaultdict(deque)
+            for index, provider_txn in enumerate(provider_txns):
+                identifier = getattr(provider_txn, key_name)
+                if identifier:
+                    exact_index[(self._scope(provider_txn), identifier)].append(index)
+
+        matched_provider_indexes: set[int] = set()
 
         for system_txn in system_txns:
             if asia_only and system_txn.region != Region.ASIA:
@@ -133,24 +155,43 @@ class MatchingEngine:
                 unmatched_sys.append(system_txn)
                 continue
 
-            candidate_indexes = [
-                index
-                for index, provider_txn in enumerate(unmatched_prov)
-                if key == getattr(provider_txn, key_name)
-                and self._identity_scope(system_txn)
-                == self._identity_scope(provider_txn)
-                and (
-                    (self._scope(system_txn) != self._scope(provider_txn))
-                    if currency_mismatch
-                    else (self._scope(system_txn) == self._scope(provider_txn))
+            match_index = None
+            if currency_mismatch:
+                currency_queues = provider_index.get(
+                    (self._identity_scope(system_txn), key), {}
                 )
-            ]
-            match_index = candidate_indexes[0] if candidate_indexes else None
+                system_currency = self._scope(system_txn)[3]
+                for currency, candidates in currency_queues.items():
+                    if (
+                        currency != system_currency
+                        and candidates
+                        and (
+                            match_index is None
+                            or candidates[0] < match_index
+                        )
+                    ):
+                        match_index = candidates[0]
+                if match_index is not None:
+                    provider_currency = self._scope(
+                        provider_txns[match_index]
+                    )[3]
+                    currency_queues[provider_currency].popleft()
+            else:
+                candidates = exact_index.get((self._scope(system_txn), key))
+                if candidates:
+                    match_index = candidates.popleft()
+
             if match_index is None:
                 unmatched_sys.append(system_txn)
             else:
-                pairs.append((system_txn, unmatched_prov.pop(match_index)))
+                matched_provider_indexes.add(match_index)
+                pairs.append((system_txn, provider_txns[match_index]))
 
+        unmatched_prov = [
+            provider_txn
+            for index, provider_txn in enumerate(provider_txns)
+            if index not in matched_provider_indexes
+        ]
         return pairs, unmatched_sys, unmatched_prov
 
     def _fuzzy_match(
@@ -160,31 +201,68 @@ class MatchingEngine:
     ) -> tuple:
         pairs = []
         unmatched_sys = []
-        unmatched_prov = list(provider_txns)
+        provider_index: dict[tuple, list[tuple]] = defaultdict(list)
+        for index, provider_txn in enumerate(provider_txns):
+            if provider_txn.merchant_id is None:
+                continue
+            key = (
+                self._scope(provider_txn),
+                provider_txn.merchant_id,
+                provider_txn.amount_minor,
+            )
+            provider_index[key].append((provider_txn.transaction_time, index))
+        for candidates in provider_index.values():
+            candidates.sort()
+
+        matched_provider_indexes: set[int] = set()
+        window = timedelta(seconds=self.time_window_second)
 
         for system_txn in system_txns:
-            possible_matches = [
-                (index, provider_txn)
-                for index, provider_txn in enumerate(unmatched_prov)
-                if self._is_fuzzy_match(system_txn, provider_txn)
-            ]
-            if not possible_matches:
+            if system_txn.merchant_id is None:
                 unmatched_sys.append(system_txn)
                 continue
 
+            key = (
+                self._scope(system_txn),
+                system_txn.merchant_id,
+                system_txn.amount_minor,
+            )
+            candidates = provider_index.get(key, [])
             system_time = system_txn.created_at
-            match_index = possible_matches[0][0]
-            smallest_difference = None
-            for index, provider_txn in possible_matches:
+            lower_bound = bisect_left(
+                candidates, (system_time - window, -1)
+            )
+            upper_bound = bisect_right(
+                candidates, (system_time + window, len(provider_txns))
+            )
+            match_index = None
+            smallest_rank = None
+            for candidate_position in range(lower_bound, upper_bound):
+                _, index = candidates[candidate_position]
+                if index in matched_provider_indexes:
+                    continue
+                provider_txn = provider_txns[index]
+                if not self._is_fuzzy_match(system_txn, provider_txn):
+                    continue
                 difference = abs(
                     (system_time - provider_txn.transaction_time).total_seconds()
                 )
-                if smallest_difference is None or difference < smallest_difference:
+                rank = (difference, index)
+                if smallest_rank is None or rank < smallest_rank:
                     match_index = index
-                    smallest_difference = difference
+                    smallest_rank = rank
 
-            pairs.append((system_txn, unmatched_prov.pop(match_index)))
+            if match_index is None:
+                unmatched_sys.append(system_txn)
+                continue
+            matched_provider_indexes.add(match_index)
+            pairs.append((system_txn, provider_txns[match_index]))
 
+        unmatched_prov = [
+            provider_txn
+            for index, provider_txn in enumerate(provider_txns)
+            if index not in matched_provider_indexes
+        ]
         return pairs, unmatched_sys, unmatched_prov
 
     def _is_fuzzy_match(

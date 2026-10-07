@@ -15,8 +15,15 @@ from reconciliation.adapters.daily_scheduler import (
     load_schedules,
 )
 
-from .generator import GeneratorConfig, generate_dataset, generate_provider_statements
-from .mongo_seed import _write_documents
+from .config import scope_specs
+from .generator import (
+    GeneratorConfig,
+    iter_scope_documents,
+    scope_document_count,
+    write_streaming_ground_truth,
+)
+from .mongo_seed import _write_document_iterator
+from .oracle import write_provider_statement
 
 
 DEFAULT_SCHEDULES = json.dumps([
@@ -125,7 +132,7 @@ def main() -> None:
     scheduler = DailyReconciliationScheduler(
         statements_dir,
         load_schedules(DEFAULT_SCHEDULES),
-        HttpReconciliationSubmitter(api_url, timeout_seconds=120),
+        HttpReconciliationSubmitter(api_url, timeout_seconds=300),
         _emit,
     )
     dates = simulation_dates(start, days)
@@ -138,19 +145,20 @@ def main() -> None:
                 seed=int(business_date.strftime("%Y%m%d")),
                 records_per_region=records,
             )
-            datasets, ground_truth = generate_dataset(config)
-            for database, documents in datasets.items():
-                _write_documents(
+            for scope in scope_specs(config):
+                _write_document_iterator(
                     client,
-                    database,
-                    documents,
+                    scope.database,
+                    iter_scope_documents(config, scope),
                     config.batch_id,
                     cleanup_stale=False,
                 )
-            for filename, content in generate_provider_statements(
-                datasets, config
-            ).items():
-                (statements_dir / filename).write_text(content, encoding="utf-8")
+                write_provider_statement(
+                    statements_dir / scope.filename,
+                    config,
+                    scope,
+                    scope_document_count(config, scope),
+                )
 
             missing_schedule_index = missing_targets.get(business_date)
             if missing_schedule_index is not None:
@@ -170,9 +178,8 @@ def main() -> None:
                     },
                 )
 
-            (truth_dir / f"{business_date.isoformat()}.json").write_text(
-                json.dumps(ground_truth, indent=2, sort_keys=True),
-                encoding="utf-8",
+            write_streaming_ground_truth(
+                truth_dir / f"{business_date.isoformat()}.json", config
             )
 
             # Noon UTC is after every configured 03:00 local run time while
