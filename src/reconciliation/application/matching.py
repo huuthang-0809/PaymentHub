@@ -1,6 +1,6 @@
 from collections import Counter
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, time
 from pathlib import Path
 from time import perf_counter
 from typing import Any, Callable
@@ -17,6 +17,7 @@ from .ports import (
     SystemTransactionSource,
 )
 from .summary import FinancialSummary, build_financial_summary
+from .calendar import classify_provider_rows, resolve_business_period
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,6 +61,8 @@ class RunMatching:
         region: Region,
         tenant_id: str | None,
         provider: str,
+        business_timezone: str,
+        cutoff_time: time,
         run_id: UUID | None = None,
     ) -> MatchingRunOutput:
         started = perf_counter()
@@ -74,6 +77,8 @@ class RunMatching:
                 region=region,
                 tenant_id=tenant_id,
                 provider=normalized_provider,
+                business_timezone=business_timezone,
+                cutoff_time=cutoff_time,
                 run_id=run_id,
             )
             outcome = "replayed" if output.replayed else "completed"
@@ -106,10 +111,15 @@ class RunMatching:
         region: Region,
         tenant_id: str | None,
         provider: str,
+        business_timezone: str,
+        cutoff_time: time,
         run_id: UUID | None,
     ) -> MatchingRunOutput:
         if not provider:
             raise ValueError("provider is required")
+        period = resolve_business_period(
+            business_date, business_timezone, cutoff_time
+        )
         with self.repository.claim_run(
             business_date=business_date,
             region=region,
@@ -117,6 +127,8 @@ class RunMatching:
             provider=provider,
             statement=statement,
             statement_content=statement_content,
+            business_timezone=period.timezone,
+            cutoff_time=period.cutoff_time,
             run_id=run_id,
         ) as claim:
             if claim.existing is not None: # If run not exist -> matching
@@ -134,11 +146,11 @@ class RunMatching:
                     )
                     raise InvalidProviderStatement(details) #Raise exception with detail issues
 
-                provider_rows = list(report.rows)
+                parsed_provider_rows = list(report.rows)
                 out_of_scope = next(
                     (
                         transaction
-                        for transaction in provider_rows
+                        for transaction in parsed_provider_rows
                         if transaction.region is not region
                         or transaction.tenant_id != tenant_id
                         or transaction.provider != provider
@@ -151,9 +163,13 @@ class RunMatching:
                         "the requested region, tenant, or provider"
                     )
 
+                provider_rows, persisted_provider_rows = classify_provider_rows(
+                    parsed_provider_rows, period
+                )
                 system_transactions = self._dependency(
                     lambda: self.system_source.get_transactions(
-                        region, tenant_id, provider, business_date
+                        region, tenant_id, provider,
+                        period.start_utc, period.end_utc,
                     ),
                     dependency="system_source",
                     operation="get_transactions",
@@ -176,7 +192,8 @@ class RunMatching:
                     tenant_id=tenant_id,
                     provider=provider,
                     claim=claim, system_rows=len(system_rows),
-                    provider_txns=provider_rows, results=results,
+                    provider_rows=len(provider_rows),
+                    provider_txns=persisted_provider_rows, results=results,
                 )
                 summary = Counter(result.result_type.value for result in results)
                 return MatchingRunOutput(

@@ -11,7 +11,7 @@ pytest tests/integration
 import json
 import os
 from dataclasses import asdict
-from datetime import date
+from datetime import date, time
 from decimal import Decimal
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -167,6 +167,8 @@ def test_all_generated_reconciliation_results_match_ground_truth() -> None:
                 region=region,
                 tenant_id=tenant_id,
                 provider=provider,
+                business_timezone=_timezone(region, tenant_id),
+                cutoff_time=time.max,
             )
 
             assert output.system_rows == expected["system_rows"], filename

@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from contextlib import AbstractContextManager
-from datetime import date
+from datetime import date, datetime, time
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Mapping, Protocol
@@ -20,7 +20,8 @@ class SystemTransactionSource(Protocol):
         region: Region,
         tenant_id: str | None,
         provider: str,
-        business_date: date,
+        start_utc: datetime,
+        end_utc: datetime,
     ) -> tuple[CanonicalTransaction, ...]: ...
 
 
@@ -61,6 +62,8 @@ class ReconRepository(Protocol):
         provider: str,
         statement: Path,
         statement_content: bytes,
+        business_timezone: str,
+        cutoff_time: time,
         run_id: UUID | None = None,
     ) -> AbstractContextManager["RunClaim"]: ...
 
@@ -69,6 +72,7 @@ class ReconRepository(Protocol):
         *,
         claim: "RunClaim",
         system_rows: int,
+        provider_rows: int,
         provider_txns: list[ProviderTransaction],
         results: list[ReconResult],
     ) -> None: ...
@@ -165,4 +169,5 @@ class ReportExporter(Protocol):
 class MatchingRunner(Protocol):
     def __call__(self, *, statement: Path, statement_content: bytes,
                  business_date: date, region: Region, tenant_id: str | None,
-                 provider: str, run_id: UUID | None = None) -> "MatchingRunOutput": ...
+                 provider: str, business_timezone: str, cutoff_time: time,
+                 run_id: UUID | None = None) -> "MatchingRunOutput": ...

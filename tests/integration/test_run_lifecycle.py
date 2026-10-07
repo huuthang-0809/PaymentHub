@@ -2,7 +2,7 @@
 
 import os
 from dataclasses import replace
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time, timezone
 from pathlib import Path
 from uuid import uuid4
 
@@ -53,7 +53,10 @@ def test_financial_summary_survives_postgres_replay() -> None:
                 system_amount_minor=3000, refund_of="pay-1", refunded_amount_minor=None,
             )
             rows = [parent, child]
-            repo.complete_run(claim=claim, system_rows=2, provider_txns=[], results=rows)
+            repo.complete_run(
+                claim=claim, system_rows=2, provider_rows=0,
+                provider_txns=[], results=rows,
+            )
         with _claim(repo, provider, region=Region.INDIA) as replay:
             assert replay.existing is not None
             actual = build_financial_summary(replay.existing.results)
@@ -68,6 +71,7 @@ def _claim(repo, provider, *, region=Region.VN, tenant_id=None):
         business_date=date(2026, 9, 22), region=region,
         tenant_id=tenant_id, provider=provider, statement=Path("f06.csv"),
         statement_content=STATEMENT,
+        business_timezone="UTC", cutoff_time=time.max,
     )
 
 
@@ -85,7 +89,10 @@ def test_replay_concurrency_recovery_and_scope_mismatch() -> None:
         with _claim(repo2, provider) as resumed:
             assert resumed.run_id == initial.run_id
             assert resumed.job_run_id == initial.job_run_id
-            repo2.complete_run(claim=resumed, system_rows=0, provider_txns=[], results=[])
+            repo2.complete_run(
+                claim=resumed, system_rows=0, provider_rows=0,
+                provider_txns=[], results=[],
+            )
         with _claim(repo1, provider) as replay:
             assert replay.run_id == initial.run_id
             assert replay.existing is not None
@@ -111,6 +118,7 @@ def test_pipeline_replay_and_failed_detail_transaction() -> None:
                 statement=Path("f06.csv"), statement_content=STATEMENT,
                 business_date=date(2026, 9, 22), region=Region.VN,
                 tenant_id=None, provider=provider,
+                business_timezone="UTC", cutoff_time=time.max,
             )
         assert connection.execute(
             "SELECT status FROM recon_run WHERE provider = %s", (provider,)
@@ -122,6 +130,7 @@ def test_pipeline_replay_and_failed_detail_transaction() -> None:
             statement=Path("f06.csv"), statement_content=content,
             business_date=date(2026, 9, 22), region=Region.VN,
             tenant_id=None, provider=provider,
+            business_timezone="UTC", cutoff_time=time.max,
         )
         output = runner.execute(**values)
         assert output.summary == {"MISSING_IN_SYSTEM": 1}
@@ -151,7 +160,8 @@ def test_pipeline_replay_and_failed_detail_transaction() -> None:
             )
             with pytest.raises(psycopg.errors.UniqueViolation) as failure:
                 repo.complete_run(
-                    claim=claim, system_rows=0, provider_txns=[txn, txn],
+                    claim=claim, system_rows=0, provider_rows=2,
+                    provider_txns=[txn, txn],
                     results=[],
                 )
             repo.fail_run(claim, failure.value)
@@ -167,7 +177,8 @@ def test_pipeline_replay_and_failed_detail_transaction() -> None:
             assert retry.run_id == claim.run_id
             assert retry.job_run_id == claim.job_run_id
             repo.complete_run(
-                claim=retry, system_rows=0, provider_txns=[], results=[],
+                claim=retry, system_rows=0, provider_rows=0,
+                provider_txns=[], results=[],
             )
         assert connection.execute(
             "SELECT status FROM recon_run WHERE run_id = %s", (claim.run_id,)
@@ -191,7 +202,10 @@ def test_query_reads_committed_snapshot_and_filters_runs():
                 txn_type=TxnType.PAYMENT, system_txn_id='snapshot',
                 system_amount_minor=123, system_currency='VND',
             )
-            repo.complete_run(claim=claim, system_rows=1, provider_txns=[], results=[row])
+            repo.complete_run(
+                claim=claim, system_rows=1, provider_rows=0,
+                provider_txns=[], results=[row],
+            )
         metadata, stored = query.snapshot(claim.run_id)
         assert metadata['status'] == 'COMPLETED'
         assert metadata['finished_at'] is not None

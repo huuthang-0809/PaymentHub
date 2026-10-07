@@ -1,6 +1,6 @@
 import os
 from contextlib import asynccontextmanager
-from datetime import date
+from datetime import date, time
 from pathlib import Path
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -68,7 +68,7 @@ async def lifespan(app: FastAPI):
         conninfo=_database_url(),
         min_size=1,
         max_size=int(os.getenv("DATABASE_POOL_SIZE", "5")),
-        open=True,
+        open=True, #open connection instantly
     )
 
     sources = {
@@ -124,6 +124,8 @@ async def lifespan(app: FastAPI):
         region: Region,
         tenant_id: str | None,
         provider: str,
+        business_timezone: str,
+        cutoff_time: time,
         run_id: UUID | None = None,
     ) -> MatchingRunOutput:
         with postgres_pool.connection() as connection:
@@ -143,6 +145,8 @@ async def lifespan(app: FastAPI):
                 region=region,
                 tenant_id=tenant_id,
                 provider=provider,
+                business_timezone=business_timezone,
+                cutoff_time=cutoff_time,
                 run_id=run_id,
             )
 

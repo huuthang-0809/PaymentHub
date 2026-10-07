@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, time
 from io import BytesIO
 from types import SimpleNamespace
 from uuid import UUID
@@ -46,6 +46,8 @@ def test_create_reconciliation_run_forwards_uploaded_statement() -> None:
         business_date=date(2026, 9, 22),
         region=Region.VN,
         provider="ONEPAY",
+        business_timezone="Asia/Ho_Chi_Minh",
+        cutoff_time=time(2),
         tenant_id=None,
     )
 
@@ -61,6 +63,8 @@ def test_create_reconciliation_run_forwards_uploaded_statement() -> None:
     assert breakdown["provider_count"] == 0
     assert body["financial_summary"]["refunds_by_currency"] == []
     assert received["statement_content"] == b"csv-content"
+    assert received["business_timezone"] == "Asia/Ho_Chi_Minh"
+    assert received["cutoff_time"] == time(2)
     assert str(received["statement"]) == "onepay.csv"
     body = response.model_dump(mode="json")
     assert body["financial_summary"]["totals_by_currency"][0]["delta_amount_minor"] == 50
@@ -81,6 +85,7 @@ def test_concurrent_same_input_returns_conflict() -> None:
         create_reconciliation_run(
             request=request, statement=statement,
             business_date=date(2026, 9, 22), region=Region.VN,
-            provider="ONEPAY", tenant_id=None,
+            provider="ONEPAY", business_timezone="Asia/Ho_Chi_Minh",
+            cutoff_time=time(2), tenant_id=None,
         )
     assert error.value.status_code == 409

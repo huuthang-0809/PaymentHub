@@ -7,7 +7,7 @@
 | Feature | Business calendar, cutoff và allowed lateness |
 | Owner | `[TBD]` |
 | Ticket | `[TBD]` |
-| Status | `Draft — chờ xác nhận rule tại mục 8` |
+| Status | `Partially implemented — timezone/cutoff có quy ước tạm; allowed lateness chờ xác nhận` |
 | Purpose | Xác định đúng reconciliation period theo provider/tenant thay vì luôn dùng local midnight, đồng thời phân loại late-arriving transactions. |
 
 ## 2. Requirements
@@ -19,6 +19,15 @@
 - Source query theo resolved business period thay vì hard-code midnight.
 - Phân loại/lưu `late_arriving` cho provider/system records theo rule được duyệt.
 - Persist timezone, cutoff và allowed lateness đã áp dụng để audit/replay deterministic.
+
+Quy ước tạm đang triển khai: `business_date=D` là kỳ nửa mở
+`[(D-1) cutoff, D cutoff)` trong timezone IANA nhận từ input. Provider row ngoài
+kỳ không tham gia matching của run D; vẫn lưu row để audit. Row tại hoặc sau
+cutoff có `late_arriving=true`; row trước đầu kỳ không được đánh dấu muộn.
+Muốn xử lý ở kỳ phù hợp cần submit statement cho business date đó.
+Bản tối giản không tự chuyển row giữa các run và chưa dùng allowed lateness.
+Không thêm migration hoặc đổi khóa idempotency. Rerun cùng input nhưng khác
+timezone/cutoff bị từ chối để bảo toàn policy của run đã lưu.
 
 ### Non-Functional Requirements
 
@@ -73,19 +82,19 @@ sequenceDiagram
 
 | Method | Endpoint | Description |
 |---|---|---|
-| POST | `/reconciliation-runs` | Client có truyền policy override hay server tự resolve `[Need Confirm]`. |
+| POST | `/reconciliation-runs` | Nhận thêm hai form field bắt buộc `business_timezone` và `cutoff_time`. |
 
 ### Request/Response
 
-- Request tối thiểu vẫn có business date + scope.
+- Request có business date + scope + `business_timezone` (ví dụ `Asia/Ho_Chi_Minh`) + `cutoff_time` (ví dụ `02:00:00`).
 - Response/query view nên expose applied timezone, cutoff, allowed lateness và policy version.
 
 ### Database
 
 | Table / Collection | Change |
 |---|---|
-| `recon_run` | Các cột timezone/cutoff/lateness đã có; cần ghi giá trị thật và có thể thêm policy version. |
-| `provider_txn.late_arriving` | Cột đã có, runtime hiện chưa set. |
+| `recon_run` | Ghi timezone/cutoff từ input vào các cột sẵn có; không sử dụng allowed lateness. |
+| `provider_txn.late_arriving` | Runtime set `true` cho provider row tại hoặc sau cutoff của run. |
 | System late evidence | Schema/reference `[TBD]`. |
 
 ## 5. Error & Edge Cases
@@ -118,8 +127,8 @@ sequenceDiagram
 
 ## 8. Câu hỏi cần xác nhận trước khi triển khai cutoff/allowed lateness
 
-Phần này tạm để chờ xác nhận. Sequence diagram là luồng dự kiến sau khi có
-rule; chưa triển khai logic chọn kỳ hoặc xử lý late-arriving theo giả định.
+Sequence diagram mô tả thiết kế đầy đủ còn chờ xác nhận. Bản tối giản đã dùng
+quy ước tạm ở mục 2; các rule production và allowed lateness vẫn cần xác nhận.
 
 | Question | Owner | Status |
 |---|---|---|

@@ -1,5 +1,5 @@
 """Inbound HTTP adapter for the reconciliation bounded context."""
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time
 from pathlib import Path
 from typing import Annotated, Literal
 from uuid import UUID
@@ -42,6 +42,8 @@ def create_reconciliation_run(
     business_date: Annotated[date, Form()],
     region: Annotated[Region, Form()],
     provider: Annotated[str, Form(min_length=1)],
+    business_timezone: Annotated[str, Form(min_length=1)],
+    cutoff_time: Annotated[time, Form()],
     tenant_id: Annotated[str | None, Form()] = None,
 ) -> ReconciliationRunResponse:
     content = statement.file.read()
@@ -58,6 +60,8 @@ def create_reconciliation_run(
             region=region,
             tenant_id=tenant_id,
             provider=provider,
+            business_timezone=business_timezone,
+            cutoff_time=cutoff_time,
         )
     except InvalidProviderStatement as exc:
         raise HTTPException(
@@ -107,7 +111,7 @@ def list_reconciliation_runs(
     cursor: str | None = None,
     sort: Literal['run_id'] = 'run_id',
 ):
-    return jsonable_encoder(_query(
+    return jsonable_encoder(_query( #jsonable_encoder help transform dict -> json
         request.app.state.query_reconciliation.runs,
         region=region, tenant_id=tenant_id, provider=provider,
         business_date=business_date, status=status, limit=limit, cursor=cursor, sort=sort,
@@ -144,4 +148,3 @@ def get_reconciliation_report(
         'Content-Disposition': f'attachment; filename="recon-{run_id}.{format}"',
         'X-Data-As-Of': data_as_of.isoformat(),
     })
-

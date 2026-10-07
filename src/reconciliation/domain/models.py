@@ -28,6 +28,7 @@ class ProviderTransaction:
     transaction_time: datetime
     source_file: str
     source_row_number: int
+    late_arriving: bool = False
     raw: dict[str, Any] = field(default_factory=dict, compare=False)
 
     def __post_init__(self) -> None:
