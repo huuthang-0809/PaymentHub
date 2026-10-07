@@ -1,0 +1,33 @@
+groups:
+  - name: paymenthub-reconciliation
+    rules:
+      - alert: CurrencyDeltaExceeded
+        expr: abs(paymenthub_reconciliation_latest_currency_delta_minor) > 100000
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: Reconciliation currency delta exceeds 100000 minor units
+          runbook: docs/runbooks/currency-delta.md
+
+      - alert: ProviderStatementMissing
+        expr: paymenthub_provider_statement_present == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: Provider statement is missing after scheduled run time
+          runbook: docs/runbooks/provider-statement-missing.md
+
+      - alert: MissingInSystemRateHigh
+        expr: |
+          paymenthub_reconciliation_latest_provider_rows >= 100
+          and
+          paymenthub_reconciliation_latest_missing_in_system_rows
+          / paymenthub_reconciliation_latest_provider_rows > 0.05
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: MISSING_IN_SYSTEM rate exceeds 5 percent with at least 100 rows
+          runbook: docs/runbooks/missing-in-system-rate.md

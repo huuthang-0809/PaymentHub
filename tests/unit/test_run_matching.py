@@ -146,6 +146,7 @@ def test_pipeline_accepts_adapter_output_without_loading_mongo(tmp_path: Path) -
     assert repository.claimed["tenant_id"] is None
     assert len(repository.saved["results"]) == 1
     assert telemetry.runs[0]["outcome"] == "completed"
+    assert telemetry.runs[0]["currency_deltas"] == {"VND": 0}
     assert {
         (item["dependency"], item["operation"], item["outcome"])
         for item in telemetry.dependencies

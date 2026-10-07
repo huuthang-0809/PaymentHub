@@ -1,0 +1,12 @@
+route:
+  receiver: paymenthub-api
+  group_by: [alertname, region, tenant_id, provider]
+  group_wait: 5s
+  group_interval: 30s
+  repeat_interval: 4h
+
+receivers:
+  - name: paymenthub-api
+    webhook_configs:
+      - url: http://api:8000/internal/alerts/webhook
+        send_resolved: true

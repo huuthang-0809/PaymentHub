@@ -1,11 +1,7 @@
 from __future__ import annotations
-
 from typing import Mapping
-
 from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, REGISTRY
-
 from shared_kernel import Region
-
 
 class ReconciliationMetrics:
     """Prometheus instrumentation with bounded, operational labels."""
@@ -50,6 +46,24 @@ class ReconciliationMetrics:
             buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30),
             registry=registry,
         )
+        self.latest_currency_delta = Gauge(
+            "paymenthub_reconciliation_latest_currency_delta_minor",
+            "Currency delta in minor units for the latest completed run.",
+            (*labels, "currency"),
+            registry=registry,
+        )
+        self.latest_provider_rows = Gauge(
+            "paymenthub_reconciliation_latest_provider_rows",
+            "Provider rows in the latest completed run.",
+            labels,
+            registry=registry,
+        )
+        self.latest_missing_in_system_rows = Gauge(
+            "paymenthub_reconciliation_latest_missing_in_system_rows",
+            "MISSING_IN_SYSTEM rows in the latest completed run.",
+            labels,
+            registry=registry,
+        )
 
     @staticmethod
     def _scope(
@@ -91,6 +105,7 @@ class ReconciliationMetrics:
         system_rows: int | None = None,
         provider_rows: int | None = None,
         summary: Mapping[str, int] | None = None,
+        currency_deltas: Mapping[str, int] | None = None,
     ) -> None:
         labels = self._scope(region, tenant_id, provider)
         self.requests.labels(**labels, outcome=outcome).inc()
@@ -102,3 +117,9 @@ class ReconciliationMetrics:
         for result, count in (summary or {}).items():
             self.results.labels(**labels, result=result).inc(count)
         self.last_success.labels(**labels).set_to_current_time()
+        self.latest_provider_rows.labels(**labels).set(provider_rows or 0)
+        self.latest_missing_in_system_rows.labels(**labels).set(
+            (summary or {}).get("MISSING_IN_SYSTEM", 0)
+        )
+        for currency, delta in (currency_deltas or {}).items():
+            self.latest_currency_delta.labels(**labels, currency=currency).set(delta)

@@ -7,7 +7,7 @@
 | Feature | Observability, reconciliation alerts và data quality |
 | Owner | `[TBD]` |
 | Ticket | `[TBD]` |
-| Status | `Designed` |
+| Status | `Partially implemented — metrics, 3 Prometheus rules, Alertmanager webhook và read API đã có; DQ/freshness API và production thresholds còn chờ` |
 | Purpose | Cho vận hành biết dữ liệu có mới, đủ và đúng hay không; phát hiện bất thường mà không lộ raw/PII. |
 
 ## 2. Requirements
@@ -28,6 +28,21 @@
 - Alert có threshold, sample size và reason rõ ràng.
 - Đo precision/recall alert trên bộ lệch cố ý.
 - Backend logging/metrics/alert chưa được chỉ định.
+
+### Điều kiện alert hiện tại
+
+Các ngưỡng dưới đây phục vụ demo và phải được Operations/Finance duyệt trước
+production:
+
+| Alert | Điều kiện phát | Không phát khi |
+|---|---|---|
+| `CurrencyDeltaExceeded` | Trị tuyệt đối của delta mới nhất theo scope/currency lớn hơn `100000` minor units liên tục 1 phút. | Delta nhỏ hơn hoặc bằng `100000`. |
+| `ProviderStatementMissing` | Scheduler đã tới `run_time`, không tìm thấy statement tương ứng và metric `paymenthub_provider_statement_present` bằng `0` liên tục 1 phút. | Chưa tới `run_time`, hoặc file tồn tại (`1`). |
+| `MissingInSystemRateHigh` | Run mới nhất có ít nhất `100` provider rows và `MISSING_IN_SYSTEM / provider_rows > 5%` liên tục 1 phút. | Mẫu nhỏ hơn `100`, hoặc tỷ lệ nhỏ hơn hay bằng `5%`. |
+
+Replay không ghi lại business metrics nên không tự tạo spike. Metric labels chỉ dùng
+region, tenant, provider và currency; không dùng run/transaction ID để tránh cardinality
+cao. File-missing metric chỉ tồn tại khi scheduler profile đang chạy.
 
 ## 3. Design
 
@@ -87,6 +102,8 @@ sequenceDiagram
 |---|---|---|
 | GET | `/_meta/freshness` | Freshness theo scope và last successful run. |
 | GET | `/metrics` | Metrics endpoint; format/backend `[Need Confirm]`. |
+| POST | `/internal/alerts/webhook` | Alertmanager gửi batch firing/resolved; API deduplicate theo fingerprint. |
+| GET | `/alerts?status=firing|resolved` | Danh sách trạng thái alert mới nhất cho frontend. |
 | GET | `/internal/data-quality` | Query DQ findings nếu API được chọn `[Need Confirm]`. |
 
 ### Request/Response
@@ -131,3 +148,17 @@ sequenceDiagram
 |---|---|---|
 | Năm data-quality rules cụ thể là gì? | Technical Lead/Finance | `[Need Confirm]` |
 | Threshold, minimum sample size và SLA của ba alerts? | Operations | `[Need Confirm]` |
+
+## 8. Implementation hiện tại
+
+- Prometheus đọc rules ở `docker/prometheus/rules/reconciliation.yml` và gửi alert
+  sang Alertmanager.
+- Alertmanager dùng webhook `http://api:8000/internal/alerts/webhook`, gồm cả
+  resolved notifications.
+- API giữ trạng thái mới nhất theo fingerprint trong memory; `GET /alerts` dành
+  cho frontend. Dữ liệu alert mất khi API restart và chưa phải audit history.
+- Webhook chưa có authentication; bản demo dựa vào Docker internal network.
+  Production phải giới hạn route hoặc thêm shared secret/mTLS.
+- `docker/prometheus/rules/reconciliation.test.yml` kiểm tra cả ba positive case
+  và normal dataset không phát alert.
+- Runbook tối giản nằm trong `docs/runbooks/`.

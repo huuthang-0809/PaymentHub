@@ -21,6 +21,7 @@ def test_completed_run_records_counts_and_scope() -> None:
         system_rows=3,
         provider_rows=2,
         summary={"MATCHED": 2, "MISSING_IN_PROVIDER": 1},
+        currency_deltas={"VND": 500},
     )
 
     text = samples(registry)
@@ -28,6 +29,9 @@ def test_completed_run_records_counts_and_scope() -> None:
     assert 'paymenthub_reconciliation_input_rows_total{provider="ONEPAY",region="VN",side="system",tenant_id="none"} 3.0' in text
     assert 'paymenthub_reconciliation_results_total{provider="ONEPAY",region="VN",result="MATCHED",tenant_id="none"} 2.0' in text
     assert "paymenthub_reconciliation_last_success_timestamp_seconds" in text
+    assert 'paymenthub_reconciliation_latest_provider_rows{provider="ONEPAY",region="VN",tenant_id="none"} 2.0' in text
+    assert 'paymenthub_reconciliation_latest_missing_in_system_rows{provider="ONEPAY",region="VN",tenant_id="none"} 0.0' in text
+    assert 'paymenthub_reconciliation_latest_currency_delta_minor{currency="VND",provider="ONEPAY",region="VN",tenant_id="none"} 500.0' in text
 
 
 def test_replay_is_counted_without_recounting_business_results() -> None:
