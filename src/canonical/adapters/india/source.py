@@ -40,4 +40,7 @@ class MongoIndiaSource:
                 }
             }
         )
-        return tuple(india_to_canonical(document, self.mapping) for document in cursor)
+        return tuple(
+            india_to_canonical(document, self.mapping, include_raw=False)
+            for document in cursor
+        )

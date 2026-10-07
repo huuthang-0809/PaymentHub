@@ -51,6 +51,7 @@ def test_all_tenants_are_read_and_kept_distinct() -> None:
     assert len(rows) == 2
     assert rows[0].global_key != rows[1].global_key
     assert {row.tenant_id for row in rows} == {"asia-id", "asia-ph"}
+    assert all(row.raw == {} for row in rows)
 
 
 def test_query_uses_half_open_utc_business_day() -> None:

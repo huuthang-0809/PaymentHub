@@ -552,3 +552,28 @@ class PostgreReconRepository:
                 (code, str(error)[:1000] if code == "INVALID_STATEMENT"
                  else type(error).__name__, claim.job_run_id),
             )
+
+    def fail_abandoned_run(self, run_id: UUID, message: str) -> None:
+        """Fail work left pending or running after its worker process exits."""
+        with self.connection.transaction(), self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE recon_run
+                SET status = 'FAILED', finished_at = now()
+                WHERE run_id = %s AND status IN ('PENDING', 'RUNNING')
+                RETURNING job_run_id
+                """,
+                (run_id,),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                return
+            cursor.execute(
+                """
+                UPDATE job_run_log
+                SET status = 'FAILED', finished_at = now(),
+                    error_code = 'WORKER_EXITED', error_message = %s
+                WHERE job_run_id = %s
+                """,
+                (message[:1000], row[0]),
+            )

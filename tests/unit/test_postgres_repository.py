@@ -207,6 +207,21 @@ def test_repository_rejects_unknown_business_timezone() -> None:
         PostgreReconRepository(connection, business_timezone="Not/AZone")
 
 
+def test_abandoned_worker_marks_pending_run_failed() -> None:
+    connection, _, cursor = _connection()
+    job_run_id = UUID("00000000-0000-0000-0000-000000000004")
+    cursor.fetchone.return_value = (job_run_id,)
+
+    PostgreReconRepository(connection).fail_abandoned_run(
+        RUN_ID, "worker process exited with code -9"
+    )
+
+    assert cursor.execute.call_args_list[-1].args[1] == (
+        "worker process exited with code -9",
+        job_run_id,
+    )
+
+
 def test_loads_completed_late_rows_for_target_period() -> None:
     connection, _, cursor = _connection()
     cursor.fetchall.return_value = [(

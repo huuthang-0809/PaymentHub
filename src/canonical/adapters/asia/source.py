@@ -57,7 +57,10 @@ class MongoAsiaSource:
             }
         )
         return tuple(
-            asia_to_canonical(document, tenant_id, self.mapping) for document in cursor
+            asia_to_canonical(
+                document, tenant_id, self.mapping, include_raw=False
+            )
+            for document in cursor
         )
 
     def get_all_tenants(self, business_date: date) -> tuple[CanonicalTransaction, ...]:

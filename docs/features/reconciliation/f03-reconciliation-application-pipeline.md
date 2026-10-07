@@ -27,7 +27,9 @@
 
 - Application phụ thuộc ports thay vì concrete Mongo/PostgreSQL implementation.
 - Composition root chọn source theo region và quản lý connection pools.
-- Background executor mặc định một worker, cấu hình qua `RECON_WORKER_COUNT`.
+- Background queue mặc định một worker, cấu hình qua `RECON_WORKER_COUNT`.
+- Mỗi run chạy trong một process mới; process kết thúc sau run để OS thu hồi toàn bộ heap.
+- Mongo source không giữ raw document trong `CanonicalTransaction` vì matching chỉ dùng normalized fields.
 - Provider transactions và reconciliation results được insert theo batch 10.000.
 
 ## 3. Design
@@ -39,6 +41,7 @@ sequenceDiagram
     autonumber
     actor Client
     participant API as Recon API
+    participant Worker as Disposable process
     participant UseCase as RunMatching
     participant Parser as Statement Parser
     participant Source as System Source
@@ -48,7 +51,8 @@ sequenceDiagram
     Client->>API: Submit statement and reconciliation scope
     API->>Repo: Persist PENDING run
     API-->>Client: 202 Accepted + run_id
-    API->>UseCase: Execute command in background worker
+    API->>Worker: Start one isolated process
+    Worker->>UseCase: Execute command
     UseCase->>Parser: Parse and validate statement
     Parser-->>UseCase: Provider rows
     UseCase->>Source: Load system rows for business date and scope
@@ -59,6 +63,7 @@ sequenceDiagram
     UseCase->>Repo: Persist run, provider rows and results
     Repo-->>UseCase: job_run_id
     UseCase-->>Repo: Mark COMPLETED or FAILED
+    Worker-->>API: Exit and release process memory
     Client->>API: Poll run status
     API-->>Client: PENDING/RUNNING/COMPLETED/FAILED
 ```

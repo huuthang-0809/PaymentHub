@@ -119,7 +119,8 @@ def _callback_attempts(document: Mapping[str, Any]) -> int:
 
 
 def india_to_canonical(
-    document: Mapping[str, Any], config: IndiaMapping | None = None
+    document: Mapping[str, Any], config: IndiaMapping | None = None,
+    *, include_raw: bool = True,
 ) -> CanonicalTransaction:
     config = config or IndiaMapping()
     if document.get("_id") is None:
@@ -211,5 +212,5 @@ def india_to_canonical(
         ),
         is_deleted=False,
         is_test_data=False,
-        raw=dict(document),
+        raw=dict(document) if include_raw else {},
     )

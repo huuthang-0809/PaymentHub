@@ -92,7 +92,8 @@ def _transaction_type(method: str | None, config: VNMapping) -> TxnType:
 
 
 def vn_to_canonical(
-    document: Mapping[str, Any], config: VNMapping | None = None
+    document: Mapping[str, Any], config: VNMapping | None = None,
+    *, include_raw: bool = True,
 ) -> CanonicalTransaction:
     config = config or VNMapping()
     if document.get("_id") is None:
@@ -167,5 +168,5 @@ def vn_to_canonical(
         provider_poll_count=_integer_or_none(document.get("PollCount"), "PollCount"),
         is_deleted=document.get("IsDeleted") is True,
         is_test_data=False,
-        raw=dict(document),
+        raw=dict(document) if include_raw else {},
     )
