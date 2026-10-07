@@ -73,9 +73,10 @@ class QueryReconciliation:
     def summary(self, run_id):
         return summary_view(self.snapshot(run_id))
 
-    def runs(self, *, region=None, tenant_id=None, provider=None,
+    def runs(self, *, run_id=None, region=None, tenant_id=None, provider=None,
              business_date=None, status=None, limit=50, cursor=None, sort='run_id'):
-        filters = dict(region=region.value if region else None, tenant_id=tenant_id,
+        filters = dict(run_id=run_id, region=region.value if region else None,
+                       tenant_id=tenant_id,
                        provider=provider.strip().upper() if provider else None,
                        business_date=business_date, status=status)
         rows = self.reader.runs(**filters)

@@ -29,9 +29,11 @@ class PostgreReconQuery:
     def __init__(self, connection):
         self.connection = connection
 
-    def runs(self, region=None, tenant_id=None, provider=None, business_date=None, status=None):
+    def runs(self, run_id=None, region=None, tenant_id=None, provider=None,
+             business_date=None, status=None):
         clauses, values = [], []
-        for field, value in [('region', region), ('tenant_id', tenant_id),
+        for field, value in [('run_id', run_id), ('region', region),
+                             ('tenant_id', tenant_id),
                              ('provider', provider), ('business_date', business_date),
                              ('status', status)]:
             if value is not None:
@@ -108,8 +110,10 @@ class PostgreReconRunDeleter:
             if row is None:
                 raise RunNotFound('Run not found')
             job_run_id, run_status = row
-            if run_status == 'RUNNING':
-                raise RunInProgress('Running reconciliation cannot be deleted')
+            if run_status in {'PENDING', 'RUNNING'}:
+                raise RunInProgress(
+                    'Pending or running reconciliation cannot be deleted'
+                )
             cursor.execute('DELETE FROM recon_run WHERE run_id = %s', (run_id,))
             cursor.execute(
                 'DELETE FROM job_run_log WHERE job_run_id = %s',

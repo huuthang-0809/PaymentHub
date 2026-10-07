@@ -1,4 +1,6 @@
+import logging
 import os
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from datetime import date, time
 from pathlib import Path
@@ -23,6 +25,7 @@ from shared_kernel.enums import Instrument
 
 
 reconciliation_metrics = ReconciliationMetrics()
+logger = logging.getLogger(__name__)
 
 
 def _database_url() -> str:
@@ -115,6 +118,10 @@ async def lifespan(app: FastAPI):
         ),
     }
     statement_parser = CsvFixtureParser()
+    executor = ThreadPoolExecutor(
+        max_workers=int(os.getenv("RECON_WORKER_COUNT", "1")),
+        thread_name_prefix="reconciliation",
+    )
 
     def run_reconciliation(
         *,
@@ -150,13 +157,39 @@ async def lifespan(app: FastAPI):
                 run_id=run_id,
             )
 
+    def submit_reconciliation(**parameters) -> UUID:
+        region = parameters["region"]
+        tenant_id = parameters["tenant_id"]
+        with postgres_pool.connection() as connection:
+            repository = PostgreReconRepository(
+                connection,
+                business_timezone=_business_timezone_name(region, tenant_id),
+            )
+            submission = repository.enqueue_run(**parameters)
+
+        if submission.should_start:
+            job_parameters = dict(parameters, run_id=submission.run_id)
+
+            def process() -> None:
+                try:
+                    run_reconciliation(**job_parameters)
+                except Exception:
+                    logger.exception(
+                        "Background reconciliation failed",
+                        extra={"run_id": str(submission.run_id)},
+                    )
+
+            executor.submit(process)
+        return submission.run_id
+
     app.state.query_reconciliation = QueryReconciliation(
         PooledReconQuery(postgres_pool), export_report,
     )
     app.state.delete_reconciliation_run = PooledReconRunDeleter(postgres_pool)
-    app.state.run_reconciliation = run_reconciliation
+    app.state.submit_reconciliation = submit_reconciliation
     try:
         yield
     finally:
+        executor.shutdown(wait=True, cancel_futures=False)
         postgres_pool.close()
         mongo_client.close()

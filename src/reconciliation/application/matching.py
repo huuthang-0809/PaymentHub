@@ -16,7 +16,7 @@ from .ports import (
     RunInProgress,
     SystemTransactionSource,
 )
-from .summary import FinancialSummary, build_financial_summary
+from .summary import build_financial_summary
 from .calendar import classify_provider_rows, resolve_business_period
 
 
@@ -27,12 +27,7 @@ class MatchingRunOutput:
     system_rows: int
     provider_rows: int
     summary: dict[str, int]
-    results: tuple[ReconResult, ...]
     replayed: bool = False #new run or replay, True: get old results
-
-    @property
-    def financial_summary(self) -> FinancialSummary:
-        return build_financial_summary(self.results)
 
 
 class InvalidProviderStatement(ValueError):
@@ -68,9 +63,10 @@ class RunMatching:
         started = perf_counter()
         outcome = "failed" #default status
         output: MatchingRunOutput | None = None
+        currency_deltas: dict[str, int] | None = None
         normalized_provider = provider.strip().upper()
         try:
-            output = self._execute(
+            output, currency_deltas = self._execute(
                 statement=statement,
                 statement_content=statement_content,
                 business_date=business_date,
@@ -91,7 +87,6 @@ class RunMatching:
             raise
         finally:
             if self.telemetry is not None:
-                financial = output.financial_summary if output else None
                 self.telemetry.record_run(
                     run_id=output.run_id if output else run_id,
                     business_date=business_date,
@@ -103,15 +98,7 @@ class RunMatching:
                     system_rows=output.system_rows if output else None,
                     provider_rows=output.provider_rows if output else None,
                     summary=output.summary if output else None,
-                    currency_deltas=(
-                        {
-                            total.currency: total.delta_amount_minor
-                            for total in financial.totals_by_currency
-                            if total.currency is not None
-                            and total.delta_amount_minor is not None
-                        }
-                        if financial else None
-                    ),
+                    currency_deltas=currency_deltas,
                 )
 
     def _execute(
@@ -126,7 +113,7 @@ class RunMatching:
         business_timezone: str,
         cutoff_time: time,
         run_id: UUID | None,
-    ) -> MatchingRunOutput:
+    ) -> tuple[MatchingRunOutput, dict[str, int]]:
         if not provider:
             raise ValueError("provider is required")
         period = resolve_business_period(
@@ -144,10 +131,13 @@ class RunMatching:
             run_id=run_id,
         ) as claim:
             if claim.existing is not None: # If run not exist -> matching
-                return MatchingRunOutput(
-                    claim.run_id, claim.job_run_id,
-                    claim.existing.system_rows, claim.existing.provider_rows,
-                    claim.existing.summary, claim.existing.results, True,
+                return (
+                    MatchingRunOutput(
+                        claim.run_id, claim.job_run_id,
+                        claim.existing.system_rows, claim.existing.provider_rows,
+                        claim.existing.summary, True,
+                    ),
+                    {},
                 )
             try:
                 report = self.parser.parse(statement_content, statement.name)
@@ -217,6 +207,7 @@ class RunMatching:
                 results = MatchingEngine().match(
                     str(claim.run_id), provider_rows, system_rows
                 )
+                financial = build_financial_summary(results)
                 self._dependency(
                     self.repository.complete_run,
                     dependency="repository",
@@ -229,9 +220,16 @@ class RunMatching:
                     provider_txns=persisted_provider_rows, results=results,
                 )
                 summary = Counter(result.result_type.value for result in results)
-                return MatchingRunOutput(
-                    claim.run_id, claim.job_run_id, len(system_rows),
-                    len(provider_rows), dict(sorted(summary.items())), tuple(results),
+                return (
+                    MatchingRunOutput(
+                        claim.run_id, claim.job_run_id, len(system_rows),
+                        len(provider_rows), dict(sorted(summary.items())), False,
+                    ),
+                    {
+                        total.currency: total.delta_amount_minor
+                        for total in financial.totals_by_currency
+                        if total.delta_amount_minor is not None
+                    },
                 )
             except Exception as error:
                 self._dependency(
