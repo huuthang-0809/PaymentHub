@@ -88,12 +88,13 @@ services:
 
   reconciliation-scheduler:
     profiles: ["scheduler"]
+    user: "${SCHEDULER_UID:-10001}:${SCHEDULER_GID:-10001}"
     build:
       context: .
-      dockerfile: docker/api.Dockerfile
-    command: ["python", "-m", "bootstrap.scheduler"]
+      dockerfile: docker/scheduler.Dockerfile
     environment:
       RECON_API_URL: http://api:8000
+      MONGO_URI: mongodb://mongodb:27017
       RECON_STATEMENT_DIR: /statements
       RECON_SCHEDULER_POLL_SECONDS: ${RECON_SCHEDULER_POLL_SECONDS:-60}
       RECON_SCHEDULER_METRICS_PORT: 9101
@@ -108,10 +109,21 @@ services:
     expose:
       - "9101"
     volumes:
-      - ${RECON_STATEMENT_DIR:-./tests/generated/provider-statements}:/statements:ro
+      - ${RECON_STATEMENT_DIR:-./tests/generated/month-simulation/provider-statements}:/statements
     depends_on:
       api:
         condition: service_healthy
+
+  reverse-proxy:
+    profiles: ["scheduler"]
+    image: nginx:stable-alpine
+    ports:
+      - "${PROXY_PORT:-8080}:80"
+    volumes:
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - reconciliation-scheduler
+      - grafana
 
   month-simulation-generate:
     profiles: ["simulation"]
@@ -181,6 +193,7 @@ services:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
       GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:8080}
       GF_PLUGINS_PREINSTALL_SYNC: yesoreyeram-infinity-datasource
       # The API uses cursor pagination with at most 200 rows per request. This
       # lets the detail table follow up to 50 cursors (10,000 rows) per query.
