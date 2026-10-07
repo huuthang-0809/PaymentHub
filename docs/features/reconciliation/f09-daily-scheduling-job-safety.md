@@ -17,7 +17,7 @@
 - Kích hoạt daily reconciliation job cho từng provider/tenant.
 - Scheduled job dùng cùng application command với manual API.
 - Nhiều instance không được đồng thời sở hữu cùng một job/input.
-- Job đến giờ nhưng không chạy phải tạo tín hiệu cho freshness/alert ở F10.
+- Job đến giờ nhưng không chạy phải tạo tín hiệu cho freshness watchdog ở F10B; alert delivery dùng F10A.
 - Graceful shutdown không để job hoàn tất giả hoặc tạo kết quả một phần.
 - Database chậm phải timeout, không giữ request/job vô hạn.
 
@@ -48,7 +48,7 @@ sequenceDiagram
     participant Pipeline as RunMatching
     participant Mongo as MongoDB
     participant PG as PostgreSQL
-    participant Watch as Metrics / Freshness F10
+    participant Watch as Metrics F10A / Freshness F10B
 
     Note over Scheduler,Files: File provider đã có sẵn trong thư mục cấu hình
 
@@ -91,7 +91,7 @@ sequenceDiagram
 Đọc sơ đồ từ trên xuống: **đến giờ → đọc file trong thư mục → gọi pipeline
 đối soát → lưu kết quả**. Sơ đồ giả định đọc file thành công. Nếu file thực tế
 bị thiếu hoặc không đọc được, ghi nhận lỗi trước khi gọi pipeline. Cảnh báo thiếu
-file quá hạn thuộc F10. Policy không khớp và shutdown xử lý theo các mục bên dưới.
+file quá hạn thuộc F10A; watchdog phát hiện job không chạy thuộc F10B. Policy không khớp và shutdown xử lý theo các mục bên dưới.
 
 ### Processing
 
@@ -103,7 +103,7 @@ file quá hạn thuộc F10. Policy không khớp và shutdown xử lý theo cá
 6. Scheduler nhớ scope/date đã submit thành công trong bộ nhớ để không gọi lại mỗi phút. Sau restart, nó có thể submit lại; idempotency F06 trả run đã lưu. Lỗi hoặc file thiếu được thử lại ở lần kiểm tra sau. SIGTERM/SIGINT dừng vòng lặp sau lần xử lý hiện tại.
 
 Bản hiện tại chỉ xét business date của ngày địa phương đang chạy, chưa tự backfill
-ngày bị bỏ lỡ khi scheduler dừng qua ngày. Watchdog F10 dùng để phát hiện trường
+ngày bị bỏ lỡ khi scheduler dừng qua ngày. Watchdog F10B dùng để phát hiện trường
 hợp đó trước khi bổ sung chính sách backfill.
 
 ### Cấu hình tối thiểu
@@ -146,7 +146,7 @@ deadline file xác định khi nào cần cảnh báo thiếu file.** Khoảng c
 mốc trong ví dụ không phải `allowed_lateness`; phần đó hiện chưa xử lý ở F07.
 Scheduler không tự chuyển các provider row ngoài kỳ sang run khác.
 
-Nếu scheduler chết hẳn, nó không thể tự báo mình bỏ lỡ lịch. Watchdog F10 cần
+Nếu scheduler chết hẳn, nó không thể tự báo mình bỏ lỡ lịch. Watchdog F10B cần
 đối chiếu lịch dự kiến với lịch sử chạy để phát hiện “job đến giờ không chạy”.
 
 ### Components

@@ -1,6 +1,6 @@
 apiVersion: 1
 
-providers:
+providers: # Create a provider name: PaymentHub
   - name: PaymentHub
     orgId: 1
     folder: PaymentHub

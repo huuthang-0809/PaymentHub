@@ -31,12 +31,15 @@ def _write_documents(
     database: str,
     documents: list[dict[str, Any]],
     batch_id: str,
+    *,
+    cleanup_stale: bool = True,
 ) -> None:
     collection = client[database][COLLECTION]
     generated_ids = [document["_id"] for document in documents]
-    collection.delete_many({
-        "testBatchId": {"$exists": True, "$ne": batch_id},
-    })
+    if cleanup_stale:
+        collection.delete_many({
+            "testBatchId": {"$exists": True, "$ne": batch_id},
+        })
     collection.delete_many(
         {"testBatchId": batch_id, "_id": {"$nin": generated_ids}}
     )

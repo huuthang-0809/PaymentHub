@@ -93,6 +93,8 @@ class RunMatching:
             if self.telemetry is not None:
                 financial = output.financial_summary if output else None
                 self.telemetry.record_run(
+                    run_id=output.run_id if output else run_id,
+                    business_date=business_date,
                     region=region,
                     tenant_id=tenant_id,
                     provider=normalized_provider,

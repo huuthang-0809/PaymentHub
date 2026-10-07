@@ -1,20 +1,20 @@
 global:
-  scrape_interval: 15s
-  evaluation_interval: 15s
+  scrape_interval: 15s # time to call metrics/ endpoint
+  evaluation_interval: 15s # time to run alert rule and recording rule
 
 rule_files:
   - /etc/prometheus/rules/reconciliation.yml
 
-alerting:
+alerting: # config alert manager
   alertmanagers:
     - static_configs:
-        - targets: ["alertmanager:9093"]
+        - targets: ["alertmanager:9093"] # when alert is firing, prometheus send to Docker service name alertmanager port 9093
 
-scrape_configs:
+scrape_configs: # config get metric
   - job_name: paymenthub-api
     metrics_path: /metrics/
     static_configs:
-      - targets: ["api:8000"]
-  - job_name: paymenthub-scheduler
+      - targets: ["api:8000"] # call endpoint: http://api:8000/metrics/ in docker api service
+  - job_name: paymenthub-scheduler # metrics_path default is /metrics
     static_configs:
       - targets: ["reconciliation-scheduler:9101"]

@@ -89,7 +89,8 @@ sequenceDiagram
 |---|---|---|
 | POST | `/reconciliation-runs` | E2E command path. |
 | GET | Run summary/results endpoints | Verify F08 contracts. |
-| GET | Freshness/metrics endpoints | Verify F10 scenarios. |
+| GET | Metrics/alert endpoints | Verify F10A scenarios. |
+| GET | Freshness/DQ endpoints | Verify F10B scenarios khi được triển khai. |
 
 ### Request/Response
 

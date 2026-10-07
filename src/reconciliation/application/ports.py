@@ -29,6 +29,8 @@ class ReconciliationTelemetry(Protocol):
     def record_run( # Measure entire a reconciliation run.
         self,
         *,
+        run_id: UUID | None,
+        business_date: date,
         region: Region,
         tenant_id: str | None,
         provider: str,
