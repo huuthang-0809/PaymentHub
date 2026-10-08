@@ -181,6 +181,37 @@ def test_pipeline_accepts_adapter_output_without_loading_mongo(tmp_path: Path) -
     assert replay.summary == output.summary
 
 
+def test_data_quality_failure_does_not_change_committed_output(
+    tmp_path: Path,
+) -> None:
+    repository = RecordingRepository()
+    calls = []
+
+    def failing_data_quality(run_id: UUID) -> None:
+        calls.append((run_id, repository.saved is not None))
+        raise RuntimeError("DQ is unavailable")
+
+    output = RunMatching(
+        StaticSystemTransactionSource((_adapter_transaction(),)),
+        CsvFixtureParser(),
+        repository,
+        data_quality=failing_data_quality,
+    ).execute(
+        statement=tmp_path / "onepay.csv",
+        statement_content=CSV_STATEMENT,
+        business_date=date(2026, 9, 22),
+        region=Region.VN,
+        tenant_id=None,
+        provider="ONEPAY",
+        business_timezone="UTC",
+        cutoff_time=time(2),
+        run_id=UUID("00000000-0000-0000-0000-000000000001"),
+    )
+
+    assert output.summary == {"MATCHED": 1}
+    assert calls == [(output.run_id, True)]
+
+
 def test_completed_replay_skips_parser_source_and_matching(tmp_path: Path) -> None:
     repository = RecordingRepository()
     repository.existing = StoredRun(4, 2, {"MATCHED": 2}, ())

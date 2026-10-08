@@ -46,7 +46,7 @@ def create_reconciliation_run(
     with tempfile.NamedTemporaryFile(
         prefix="reconciliation-", suffix=".csv", delete=False
     ) as temporary:
-        shutil.copyfileobj(statement.file, temporary)
+        shutil.copyfileobj(statement.file, temporary) # copy upload into NamedTemporaryFile
         statement_path = Path(temporary.name)
 
     if statement_path.stat().st_size == 0:

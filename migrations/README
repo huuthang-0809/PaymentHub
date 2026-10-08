@@ -8,6 +8,7 @@ P2 migration order:
 6. `0006_window_aggregate`
 7. `0007_recon_result_refund_evidence`
 8. `0008_normalize_column_types`
+9. `0009_dq_daily`
 
 Run against the local PostgreSQL service:
 

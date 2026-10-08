@@ -173,7 +173,7 @@ async def lifespan(app: FastAPI):
         max_size=int(os.getenv("DATABASE_POOL_SIZE", "5")),
         open=True, #open connection instantly
     )
-    process_context = multiprocessing.get_context("spawn")
+    process_context = multiprocessing.get_context("spawn") # spawn create complete new process instead of copy from parent
     executor = ThreadPoolExecutor(
         max_workers=int(os.getenv("RECON_WORKER_COUNT", "1")),
         thread_name_prefix="reconciliation",
@@ -189,19 +189,20 @@ async def lifespan(app: FastAPI):
                     connection,
                     business_timezone=_business_timezone_name(region, tenant_id),
                 )
-                submission = repository.enqueue_run(
+                submission = repository.enqueue_run( # check duplicate checksum -> create recon_run and job_run_log with status pending
                     **parameters,
                     statement_checksum=_file_checksum(statement_path),
                 )
 
-            if not submission.should_start:
+            if not submission.should_start: # if input already exist
                 statement_path.unlink(missing_ok=True)
                 return submission.run_id
 
             job_parameters = dict(parameters, run_id=submission.run_id)
 
             def process() -> None:
-                metrics_reader, metrics_writer = process_context.Pipe(duplex=False)
+                # parent keep reder and send writer to child process
+                metrics_reader, metrics_writer = process_context.Pipe(duplex=False) # create one way pipeline
                 worker_parameters = {
                     **job_parameters,
                     "statement_path": statement_path,
@@ -215,16 +216,17 @@ async def lifespan(app: FastAPI):
                         name=f"reconciliation-{submission.run_id}",
                     )
                     worker.start()
-                    metrics_writer.close()
-                    worker.join()
+                    metrics_writer.close() # parent close writer
+                    worker.join() # execute thread wait for child process to finish
                     # Metric payloads are tiny. Replay them in the API process
                     # because Prometheus state is not shared between processes.
+                    # RunMatching mesure metrics -> _ProcessTelemetry send metrics through pipe -> ReconciliationMetrics write metrics to prometheus
                     while metrics_reader.poll():
                         try:
                             method, values = metrics_reader.recv()
                         except EOFError:
                             break
-                        getattr(reconciliation_metrics, method)(**values)
+                        getattr(reconciliation_metrics, method)(**values) # write metrics to prometheus
                     if worker.exitcode != 0:
                         with postgres_pool.connection() as connection:
                             PostgreReconRepository(

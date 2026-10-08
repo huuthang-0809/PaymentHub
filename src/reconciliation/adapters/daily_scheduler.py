@@ -2,6 +2,7 @@
 
 import json
 import time as clock
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from pathlib import Path
@@ -97,17 +98,21 @@ class DailyReconciliationScheduler:
         schedules: tuple[DailySchedule, ...],
         submit: SubmitStatement,
         emit: EmitEvent,
+        worker_count: int = 1,
     ) -> None:
+        if worker_count <= 0:
+            raise ValueError("worker_count must be positive")
         self.statement_directory = statement_directory.resolve()
         self.schedules = schedules
         self.submit = submit
         self.emit = emit
+        self.worker_count = worker_count
         self.completed: set[tuple[Region, str | None, str, date]] = set()
 
     def run_due(self, now: datetime) -> int:
         if now.tzinfo is None or now.utcoffset() is None:
             raise ValueError("Scheduler time must be timezone-aware")
-        submitted = 0
+        due = []
         for schedule in self.schedules:
             local_now = now.astimezone(ZoneInfo(schedule.business_timezone))
             business_date = local_now.date()
@@ -125,20 +130,39 @@ class DailyReconciliationScheduler:
             if not statement.is_file():
                 self.emit("statement_missing", self._context(schedule, business_date))
                 continue
-            try:
-                self.submit(schedule, business_date, statement)
-            except Exception as error:
-                self.emit(
-                    "run_failed",
-                    {
-                        **self._context(schedule, business_date),
-                        "error": type(error).__name__,
-                    },
+            due.append((schedule, business_date, statement, key))
+
+        submitted = 0
+        with ThreadPoolExecutor(
+            max_workers=self.worker_count,
+            thread_name_prefix="reconciliation-scheduler",
+        ) as executor:
+            futures = {
+                executor.submit(self.submit, schedule, business_date, statement): (
+                    schedule,
+                    business_date,
+                    key,
                 )
-                continue
-            self.completed.add(key)
-            submitted += 1
-            self.emit("run_submitted", self._context(schedule, business_date))
+                for schedule, business_date, statement, key in due
+            }
+            for future in as_completed(futures):
+                schedule, business_date, key = futures[future]
+                try:
+                    future.result()
+                except Exception as error:
+                    self.emit(
+                        "run_failed",
+                        {
+                            **self._context(schedule, business_date),
+                            "error": type(error).__name__,
+                        },
+                    )
+                    continue
+                self.completed.add(key)
+                submitted += 1
+                self.emit(
+                    "run_submitted", self._context(schedule, business_date)
+                )
         return submitted
 
     @staticmethod

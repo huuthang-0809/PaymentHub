@@ -46,6 +46,9 @@ def main() -> None:
     poll_seconds = float(os.getenv("RECON_SCHEDULER_POLL_SECONDS", "60"))
     if poll_seconds <= 0:
         raise ValueError("RECON_SCHEDULER_POLL_SECONDS must be positive")
+    worker_count = int(os.getenv("RECON_WORKER_COUNT", "1"))
+    if worker_count <= 0:
+        raise ValueError("RECON_WORKER_COUNT must be positive")
     start_http_server(int(os.getenv("RECON_SCHEDULER_METRICS_PORT", "9101")))
     schedules = load_schedules(os.getenv("RECON_SCHEDULES_JSON", "[]"))
     scheduler = DailyReconciliationScheduler(
@@ -58,6 +61,7 @@ def main() -> None:
             float(os.getenv("RECON_STATUS_TIMEOUT_SECONDS", "3600")),
         ),
         _emit,
+        worker_count=worker_count,
     )
     stopped = Event() # boolean flag, default is False
 
@@ -66,7 +70,10 @@ def main() -> None:
 
     signal.signal(signal.SIGTERM, stop) # SIGTERM: kill from system
     signal.signal(signal.SIGINT, stop) # SIGINT: ctrl+C from user
-    _emit("scheduler_started", {"schedule_count": len(schedules)})
+    _emit(
+        "scheduler_started",
+        {"schedule_count": len(schedules), "worker_count": worker_count},
+    )
 
     simulation_start = os.getenv("RECON_SIMULATION_START_DATE")
     if simulation_start:

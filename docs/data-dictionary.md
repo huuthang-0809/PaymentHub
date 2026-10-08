@@ -347,6 +347,10 @@ report tiếp tục dùng toàn bộ snapshot đã commit.
 
 Summary run chưa hoàn tất chỉ có metadata, các số tổng/financial_summary null. Results/report yêu cầu snapshot hoàn tất. Lỗi 404 không có run, 409 chưa hoàn tất/đang chạy cùng input, 422 input/cursor không hợp lệ, 503 query database không sẵn sàng.
 
+`GET /internal/data-quality` trả năm rule cho mỗi run đã evaluate. Có thể lọc theo
+run/date/scope/rule/status/severity. `affected_result_keys` kết hợp với `run_id`
+trỏ tới đúng reconciliation results bị ảnh hưởng; API không trả raw payload.
+
 Export dùng đúng các trường ReconResult ở mục 5, không có raw hoặc customer_id. CSV ghi số nguyên dạng văn bản và bảo vệ chuỗi có thể bị diễn giải là công thức. XLSX lưu các trường tiền dạng text. Parquet: tiền decimal128(38,0), source_row_number int64, trường khác string; schema export hiện cho phép nullable tất cả cột, khác annotation bắt buộc của domain. Metadata Parquet có data_dictionary và data_as_of. Report HTTP có X-Data-As-Of = finished_at.
 
 Audit system bằng `(region, tenant_id, system_txn_id)`; audit provider bằng `(run_id, source_file, source_row_number)`. Kết quả lưu evidence tiền/status/refund để replay. Không lưu toàn bộ canonical source snapshot trong recon_result.
@@ -497,6 +501,22 @@ Schema chỉ dùng kiểu dựng sẵn của PostgreSQL. Mã có miền đóng d
 | `raw` | `jsonb` | Không; `NOT NULL DEFAULT '{}'::jsonb` | Payload nguồn phục vụ lưu/truy vết; không trả qua API query hoặc export kết quả. |
 | `ingested_at` | `timestamptz` | Không; `NOT NULL DEFAULT now()` | Thời điểm ghi dòng provider vào DB, default now(). |
 
+### dq_daily
+
+| Cột | SQL type | Nullable / default / ràng buộc tại cột | Ý nghĩa |
+|---|---|---|---|
+| `business_date` | `date` | Không; thuộc PK | Ngày nghiệp vụ của run được đánh giá. |
+| `run_id` / `job_run_id` | `uuid` | Không; FK tới `recon_run` | Lineage của finding; xóa run sẽ cascade finding. |
+| `region` / `tenant_id` / `provider` | `varchar/text` | Tenant có thể null | Scope đối soát. |
+| `rule_code` | `varchar(64)` | Không; thuộc PK | Mã ổn định của một trong năm DQ rules. |
+| `rule_version` | `integer` | Không; thuộc PK; `CHECK > 0` | Version giúp re-evaluate idempotently. |
+| `severity` | `varchar(8)` | Không; `WARNING` hoặc `CRITICAL` | Mức độ của rule. |
+| `status` | `varchar(6)` | Không; `PASSED` hoặc `FAILED` | Failed khi có ít nhất một result bị ảnh hưởng. |
+| `evaluated_count` | `integer` | Không; `CHECK >= 0` | Tổng số reconciliation results được kiểm tra. |
+| `affected_count` | `integer` | Không; `CHECK 0..evaluated_count` | Số results vi phạm rule. |
+| `affected_result_keys` | `integer[]` | Không; mặc định `{}` | Các `result_key` nội bộ; số phần tử phải bằng affected_count. |
+| `evaluated_at` | `timestamptz` | Không; mặc định `now()` | Lần evaluate/upsert gần nhất. |
+
 ### window_aggregate
 
 | Cột | SQL type | Nullable / default / ràng buộc tại cột | Ý nghĩa |
@@ -521,6 +541,7 @@ Schema chỉ dùng kiểu dựng sẵn của PostgreSQL. Mã có miền đóng d
 - recon_run: PK run_id; FK job_run_id → job_run_log; unique (run_id,job_run_id), (run_id,job_run_id,business_date) và (business_date,provider,file_checksum); index (business_date,region,tenant_id,provider). Khóa idempotency chưa chứa region/tenant; repository kiểm tra và từ chối nếu input trùng khóa nhưng scope khác.
 - recon_result: partition ngày theo business_date; PK (business_date,result_id); FK (run_id,job_run_id,business_date) → recon_run, ON DELETE CASCADE; unique (business_date,run_id,result_key); CHECK giới hạn 9 result_type, result_key > 0 và source_row_number > 0 nếu có. Index (run_id,result_type,result_key); partial index (run_id,region,tenant_id,provider,result_type) cho kết quả ngoài MATCHED/FUZZY_MATCHED.
 - provider_txn: partition ngày theo business_date; PK (business_date,provider_row_id); FK (run_id,job_run_id,business_date) → recon_run, ON DELETE CASCADE; unique (business_date,run_id,source_file,source_row_number); CHECK amount_minor >= 0 và source_row_number > 0. Index (run_id,source_file,source_row_number), scope/currency/transaction_time; partial index scope/currency/provider_txn_id khác null; BRIN transaction_time.
+- dq_daily: PK (business_date,run_id,rule_code,rule_version); FK (run_id,job_run_id,business_date) → recon_run, ON DELETE CASCADE; index scope/date. Re-evaluate cùng run/rule/version dùng upsert, không tạo duplicate.
 - window_aggregate: PK (window_start,region,tenant_id,provider,currency); CHECK window_end > window_start, các count không âm và success_rate trong khoảng 0..1.
 - canonical_event: B-tree (region,tenant_id,provider,updated_at DESC) và BRIN updated_at.
 - Run COMPLETED được replay từ dữ liệu đã lưu, không tạo thêm kết quả; concurrent cùng input bị chặn bằng advisory lock. Run lỗi có thể retry trên cùng ID. Provider rows, results và chuyển trạng thái COMPLETED được commit cùng transaction.

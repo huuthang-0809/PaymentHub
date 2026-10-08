@@ -11,6 +11,7 @@ import pytest
 
 from canonical.domain import CanonicalTransaction
 from reconciliation.adapters import CsvFixtureParser, PostgreReconRepository
+from reconciliation.adapters.data_quality import PostgreDataQualityStore
 from reconciliation.application import RunMatching, RunInProgress
 from reconciliation.application.ports import RunNotFound
 from reconciliation.application.summary import build_financial_summary
@@ -80,6 +81,49 @@ def test_financial_summary_survives_postgres_replay() -> None:
             assert actual.totals_by_currency[0].delta_amount_minor == 13000
             assert actual.refund_parent_metrics.refunded_transaction_rate == "1.000000"
             assert actual.refund_cross_checks[0].status == "MATCHED"
+
+
+def test_data_quality_evaluation_is_idempotent() -> None:
+    provider = f"TEST{uuid4().hex[:12].upper()}"
+    with psycopg.connect(os.environ["F06_TEST_DATABASE_URL"]) as connection:
+        repo = PostgreReconRepository(connection)
+        with _claim(repo, provider) as claim:
+            rows = [
+                ReconResult(
+                    run_id=str(claim.run_id),
+                    result_type=ReconResultType.INVALID_DATA,
+                    region=Region.VN,
+                    tenant_id=None,
+                    provider=provider,
+                ),
+                ReconResult(
+                    run_id=str(claim.run_id),
+                    result_type=ReconResultType.MATCHED,
+                    region=Region.VN,
+                    tenant_id=None,
+                    provider=provider,
+                ),
+            ]
+            repo.complete_run(
+                claim=claim,
+                system_rows=1,
+                provider_rows=1,
+                provider_txns=[],
+                results=rows,
+            )
+
+        store = PostgreDataQualityStore(connection)
+        store.evaluate(claim.run_id)
+        store.evaluate(claim.run_id)
+
+        findings = connection.execute(
+            "SELECT rule_code, status, affected_result_keys "
+            "FROM dq_daily WHERE run_id = %s ORDER BY rule_code",
+            (claim.run_id,),
+        ).fetchall()
+        assert len(findings) == 5
+        invalid = next(row for row in findings if row[0] == "INVALID_DATA")
+        assert invalid == ("INVALID_DATA", "FAILED", [1])
 
 
 def _claim(repo, provider, *, region=Region.VN, tenant_id=None):
