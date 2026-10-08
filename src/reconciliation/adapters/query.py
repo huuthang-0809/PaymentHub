@@ -30,7 +30,7 @@ class PostgreReconQuery:
         self.connection = connection
 
     def runs(self, run_id=None, region=None, tenant_id=None, provider=None,
-             business_date=None, status=None):
+             business_date=None, status=None, after=None, fetch_limit=None):
         clauses, values = [], []
         for field, value in [('run_id', run_id), ('region', region),
                              ('tenant_id', tenant_id),
@@ -39,12 +39,19 @@ class PostgreReconQuery:
             if value is not None:
                 clauses.append(f'{field} = %s')
                 values.append(value)
+        if after is not None:
+            clauses.append('run_id > %s')
+            values.append(after)
         where = ' WHERE ' + ' AND '.join(clauses) if clauses else ''
+        limit = ''
+        if fetch_limit is not None:
+            limit = ' LIMIT %s'
+            values.append(fetch_limit)
         with self.connection.cursor(row_factory=dict_row) as cursor:
             cursor.execute('SELECT run_id, job_run_id, business_date, region, tenant_id, '
                            'provider, source_file, file_checksum, business_timezone, '
                            'cutoff_time, status, started_at, finished_at FROM recon_run'
-                           + where + ' ORDER BY run_id', values)
+                           + where + ' ORDER BY run_id' + limit, values)
             return cursor.fetchall()
 
     def snapshot(

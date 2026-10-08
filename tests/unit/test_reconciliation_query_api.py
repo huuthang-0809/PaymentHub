@@ -3,7 +3,7 @@ import io
 import json
 from dataclasses import asdict, replace
 from datetime import UTC, date, datetime
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import duckdb
 import pytest
@@ -55,8 +55,13 @@ def setup_api():
         def __init__(self):
             self.snapshot_result_flags = []
 
-        def runs(self, **filters):
-            return query('runs', **filters)
+        def runs(self, *, after=None, fetch_limit=None, **filters):
+            rows = query('runs', **filters)
+            rows = [
+                row for row in rows
+                if after is None or row['run_id'] > after
+            ]
+            return rows if fetch_limit is None else rows[:fetch_limit]
 
         def snapshot(self, run_id, *, include_results=True):
             self.snapshot_result_flags.append(include_results)
@@ -115,8 +120,41 @@ def test_summary_results_filter_and_cursor(setup_api):
     assert client.get('/reconciliation-runs', params={'run_id': str(run_id)}).json()['items']
     assert client.get('/reconciliation-runs', params={'run_id': str(uuid4())}).json()['items'] == []
     assert client.get('/reconciliation-runs', params={'region': 'VN'}).json()['items'] == []
+    assert client.get('/reconciliation-runs', params={'cursor': '!'}).status_code == 422
     assert client.get(f'/reconciliation-runs/{uuid4()}/summary').status_code == 404
     assert client.get('/reconciliation-runs/not-uuid/summary').status_code == 422
+
+
+def test_run_list_paginates_in_reader_with_limit_plus_one():
+    run_ids = [UUID(int=1), UUID(int=2)]
+
+    class Reader:
+        def __init__(self):
+            self.calls = []
+
+        def runs(self, *, after=None, fetch_limit=None, **filters):
+            self.calls.append((after, fetch_limit, filters))
+            rows = [
+                {'run_id': run_id}
+                for run_id in run_ids
+                if after is None or run_id > after
+            ]
+            return rows[:fetch_limit]
+
+    reader = Reader()
+    query = QueryReconciliation(reader, export_report)
+
+    first = query.runs(limit=1)
+    second = query.runs(limit=1, cursor=first['next_cursor'])
+
+    assert first['items'] == [{'run_id': run_ids[0]}]
+    assert first['next_cursor'] is not None
+    assert second['items'] == [{'run_id': run_ids[1]}]
+    assert second['next_cursor'] is None
+    assert [(after, fetch_limit) for after, fetch_limit, _ in reader.calls] == [
+        (None, 2),
+        (run_ids[0], 2),
+    ]
 
 
 @pytest.mark.parametrize('status', ['RUNNING', 'FAILED'])

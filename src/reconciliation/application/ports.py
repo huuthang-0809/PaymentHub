@@ -202,7 +202,8 @@ class ReconQuery(Protocol):
     def runs(self, *, run_id: UUID | None = None, region: str | None = None,
              tenant_id: str | None = None,
              provider: str | None = None, business_date: date | None = None,
-             status: str | None = None) -> list[dict]: ...
+             status: str | None = None, after: UUID | None = None,
+             fetch_limit: int | None = None) -> list[dict]: ...
 
     def snapshot(self, run_id: UUID, *, include_results: bool = True
                  ) -> tuple[dict, StoredRun | None] | None: ...
