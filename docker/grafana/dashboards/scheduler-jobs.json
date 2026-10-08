@@ -1,0 +1,725 @@
+{
+  "uid": "paymenthub-scheduler-jobs",
+  "title": "PaymentHub \u00b7 Generation & Simulation",
+  "description": "Generate synthetic data and run reconciliation simulations.",
+  "schemaVersion": 41,
+  "version": 1,
+  "editable": true,
+  "tags": [
+    "paymenthub",
+    "operations",
+    "simulation"
+  ],
+  "timezone": "browser",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "refresh": "5s",
+  "timepicker": {
+    "hidden": true,
+    "refresh_intervals": [
+      "5s",
+      "10s",
+      "30s",
+      "1m"
+    ]
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "start_date",
+        "label": "Start date",
+        "type": "textbox",
+        "query": "2026-10-01",
+        "current": {
+          "text": "2026-10-01",
+          "value": "2026-10-01"
+        },
+        "options": [],
+        "hide": 0,
+        "skipUrlSync": false
+      },
+      {
+        "name": "days",
+        "label": "Days",
+        "type": "textbox",
+        "query": "5",
+        "current": {
+          "text": "5",
+          "value": "5"
+        },
+        "options": [],
+        "hide": 0,
+        "skipUrlSync": false
+      },
+      {
+        "name": "records_per_region",
+        "label": "Records / region",
+        "type": "textbox",
+        "query": "100",
+        "current": {
+          "text": "100",
+          "value": "100"
+        },
+        "options": [],
+        "hide": 0,
+        "skipUrlSync": false
+      },
+      {
+        "name": "missing_statement_count",
+        "label": "Missing statements",
+        "type": "textbox",
+        "query": "1",
+        "current": {
+          "text": "1",
+          "value": "1"
+        },
+        "options": [],
+        "hide": 0,
+        "skipUrlSync": false
+      },
+      {
+        "name": "seconds_per_day",
+        "label": "Seconds / day",
+        "type": "textbox",
+        "query": "10",
+        "current": {
+          "text": "10",
+          "value": "10"
+        },
+        "options": [],
+        "hide": 0,
+        "skipUrlSync": false
+      },
+      {
+        "name": "worker_count",
+        "label": "Workers",
+        "type": "textbox",
+        "query": "2",
+        "current": {
+          "text": "2",
+          "value": "2"
+        },
+        "options": [],
+        "hide": 0,
+        "skipUrlSync": false
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "Generate \u2192 wait for COMPLETED \u2192 simulate",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 4
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "Set the parameters above, then click **Generate data**. When its status is **COMPLETED**, click **Start simulation** using the same dates. Status tables refresh every **5 seconds**.\n\nOnly one job can run at a time. Status history clears when the scheduler restarts."
+      }
+    },
+    {
+      "id": 2,
+      "type": "table",
+      "title": "1 \u00b7 Generate data",
+      "description": "Uses the parameters above. Jobs run in the background; status appears below after refresh.",
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 12,
+        "h": 4
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "scheduler-api"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "scheduler-api"
+          },
+          "type": "json",
+          "source": "inline",
+          "parser": "backend",
+          "format": "table",
+          "root_selector": "",
+          "columns": [
+            {
+              "selector": "action",
+              "text": "Action",
+              "type": "string"
+            },
+            {
+              "selector": "start_date",
+              "text": "Start date",
+              "type": "string"
+            },
+            {
+              "selector": "days",
+              "text": "Days",
+              "type": "string"
+            }
+          ],
+          "filters": [],
+          "data": "[{\"start_date\": \"${start_date:raw}\", \"days\": \"${days:raw}\", \"records\": \"${records_per_region:raw}\", \"missing\": \"${missing_statement_count:raw}\", \"action\": \"Submit\"}]"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Action"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "actions"
+                }
+              },
+              {
+                "id": "actions",
+                "value": [
+                  {
+                    "type": "infinity",
+                    "title": "Generate data",
+                    "confirmation": "Generate data for ${days} days starting ${start_date}?",
+                    "style": {
+                      "backgroundColor": "#3274D9"
+                    },
+                    "infinity": {
+                      "url": "http://reconciliation-scheduler:9101/generation-jobs",
+                      "method": "POST",
+                      "headers": [
+                        [
+                          "Content-Type",
+                          "application/json"
+                        ]
+                      ],
+                      "body": "{\"start_date\": \"${start_date:raw}\", \"days\": ${days:raw}, \"records_per_region\": ${records_per_region:raw}, \"missing_statement_count\": ${missing_statement_count:raw}}",
+                      "queryParams": [],
+                      "datasourceUid": "scheduler-api"
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.width",
+                "value": 180
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Start date"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 140
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Days"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 80
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "lg",
+        "footer": {
+          "show": false
+        },
+        "sortBy": []
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {},
+            "indexByName": {
+              "Action": 0,
+              "Start date": 1,
+              "Days": 2
+            },
+            "renameByName": {}
+          }
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "table",
+      "title": "2 \u00b7 Run simulation",
+      "description": "Uses the parameters above. Jobs run in the background; status appears below after refresh.",
+      "gridPos": {
+        "x": 12,
+        "y": 4,
+        "w": 12,
+        "h": 4
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "scheduler-api"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "scheduler-api"
+          },
+          "type": "json",
+          "source": "inline",
+          "parser": "backend",
+          "format": "table",
+          "root_selector": "",
+          "columns": [
+            {
+              "selector": "action",
+              "text": "Action",
+              "type": "string"
+            },
+            {
+              "selector": "start_date",
+              "text": "Start date",
+              "type": "string"
+            },
+            {
+              "selector": "days",
+              "text": "Days",
+              "type": "string"
+            }
+          ],
+          "filters": [],
+          "data": "[{\"start_date\": \"${start_date:raw}\", \"days\": \"${days:raw}\", \"seconds\": \"${seconds_per_day:raw}\", \"workers\": \"${worker_count:raw}\", \"action\": \"Submit\"}]"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Action"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "actions"
+                }
+              },
+              {
+                "id": "actions",
+                "value": [
+                  {
+                    "type": "infinity",
+                    "title": "Start simulation",
+                    "confirmation": "Start simulation for ${days} days starting ${start_date}? Confirm generation has completed.",
+                    "style": {
+                      "backgroundColor": "#37872D"
+                    },
+                    "infinity": {
+                      "url": "http://reconciliation-scheduler:9101/simulation-jobs",
+                      "method": "POST",
+                      "headers": [
+                        [
+                          "Content-Type",
+                          "application/json"
+                        ]
+                      ],
+                      "body": "{\"start_date\": \"${start_date:raw}\", \"days\": ${days:raw}, \"seconds_per_day\": ${seconds_per_day:raw}, \"worker_count\": ${worker_count:raw}}",
+                      "queryParams": [],
+                      "datasourceUid": "scheduler-api"
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.width",
+                "value": 180
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Start date"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 140
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Days"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 80
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "lg",
+        "footer": {
+          "show": false
+        },
+        "sortBy": []
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {},
+            "indexByName": {
+              "Action": 0,
+              "Start date": 1,
+              "Days": 2
+            },
+            "renameByName": {}
+          }
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "table",
+      "title": "Generation jobs",
+      "description": "Newest submitted jobs first. Empty means no jobs since the scheduler last started.",
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "scheduler-api"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "scheduler-api"
+          },
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "root_selector": "",
+          "columns": [
+            {
+              "selector": "job_id",
+              "text": "Job ID",
+              "type": "string"
+            },
+            {
+              "selector": "status",
+              "text": "Status",
+              "type": "string"
+            },
+            {
+              "selector": "error",
+              "text": "Error",
+              "type": "string"
+            }
+          ],
+          "filters": [],
+          "url": "/generation-jobs",
+          "url_options": {
+            "method": "GET",
+            "data": ""
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Status"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "custom.width",
+                "value": 115
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "running": {
+                        "text": "RUNNING",
+                        "color": "blue",
+                        "index": 0
+                      },
+                      "completed": {
+                        "text": "COMPLETED",
+                        "color": "green",
+                        "index": 1
+                      },
+                      "failed": {
+                        "text": "FAILED",
+                        "color": "red",
+                        "index": 2
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Job ID"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 310
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "sortBy": []
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {},
+            "indexByName": {
+              "Job ID": 0,
+              "Status": 1,
+              "Error": 2
+            },
+            "renameByName": {}
+          }
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "table",
+      "title": "Simulation jobs",
+      "description": "Newest submitted jobs first. Empty means no jobs since the scheduler last started.",
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "scheduler-api"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "scheduler-api"
+          },
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "root_selector": "",
+          "columns": [
+            {
+              "selector": "job_id",
+              "text": "Job ID",
+              "type": "string"
+            },
+            {
+              "selector": "status",
+              "text": "Status",
+              "type": "string"
+            },
+            {
+              "selector": "error",
+              "text": "Error",
+              "type": "string"
+            }
+          ],
+          "filters": [],
+          "url": "/simulation-jobs",
+          "url_options": {
+            "method": "GET",
+            "data": ""
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Status"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "custom.width",
+                "value": 115
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "running": {
+                        "text": "RUNNING",
+                        "color": "blue",
+                        "index": 0
+                      },
+                      "completed": {
+                        "text": "COMPLETED",
+                        "color": "green",
+                        "index": 1
+                      },
+                      "failed": {
+                        "text": "FAILED",
+                        "color": "red",
+                        "index": 2
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Job ID"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 310
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "sortBy": []
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {},
+            "indexByName": {
+              "Job ID": 0,
+              "Status": 1,
+              "Error": 2
+            },
+            "renameByName": {}
+          }
+        }
+      ]
+    }
+  ],
+  "links": [
+    {
+      "title": "Runs & Operations",
+      "type": "link",
+      "url": "/d/paymenthub-reconciliation",
+      "targetBlank": false
+    }
+  ]
+}

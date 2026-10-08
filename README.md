@@ -19,6 +19,8 @@ docker compose --profile scheduler up -d --build
 ```
 
 Mở Grafana qua `http://localhost:8080`. Có thể đổi cổng bằng `PROXY_PORT`.
+Dashboard **Generation & Simulation** tại `/d/paymenthub-scheduler-jobs` có nút
+submit và bảng trạng thái cho cả hai loại job; xem `docs/grafana-dashboards.md`.
 Khi dùng domain hoặc cổng khác, đặt `GRAFANA_ROOT_URL` thành URL truy cập bên ngoài.
 `RECON_SCHEDULES_JSON` trong `.env` phải chứa các lịch đối soát cần chạy.
 Scheduler chờ request, không tự chạy simulation khi khởi động.
@@ -88,7 +90,8 @@ submit khi đang bận trả `409`. Trạng thái lưu trong bộ nhớ và mấ
 Chạy một process Uvicorn (`--workers 1`) và một replica scheduler.
 Metrics vẫn được Prometheus đọc tại `reconciliation-scheduler:9101/metrics/`.
 
-Qua Grafana ở cổng proxy, dùng các URL cùng origin cho Actions POST và query GET.
+Hai nút trên dashboard gọi POST qua datasource Scheduler API ở phía Grafana
+server, nên dùng được ở cả cổng Grafana `3000` và cổng proxy `8080`.
 Nginx hiện chỉ định tuyến; các endpoint job chưa có xác thực, nên chỉ truy cập
 qua mạng tin cậy hoặc lớp xác thực của môi trường triển khai.
 
