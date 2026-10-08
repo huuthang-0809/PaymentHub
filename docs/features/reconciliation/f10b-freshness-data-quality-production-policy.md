@@ -7,7 +7,7 @@
 | Feature | Freshness watchdog/API, data-quality findings và production alert policy |
 | Owner | `[TBD]` |
 | Ticket | `[TBD]` |
-| Status | `Designed — API, persistence, five DQ rules và production thresholds chưa được chốt/triển khai` |
+| Status | `Partially implemented — freshness API đã có; persistence DQ, năm DQ rules và production thresholds chưa được triển khai` |
 | Purpose | Cho vận hành biết dữ liệu có mới, đủ và đúng hay không; dùng policy đã được Operations/Finance duyệt thay cho các ngưỡng demo của F10A. |
 
 ## 2. Requirements
@@ -77,7 +77,7 @@ sequenceDiagram
 
 | Method | Endpoint | Description |
 |---|---|---|
-| GET | `/_meta/freshness` | Scope, expected/latest time, lag, status và `data_as_of`. |
+| GET | `/_meta/freshness` | Freshness của mọi configured scope; hỗ trợ lọc `region`, `tenant_id`, `provider`. |
 | GET | `/internal/data-quality` | Query DQ findings; exact contract và authorization `[Need Confirm]`. |
 
 ### Database dự kiến
@@ -133,3 +133,8 @@ Không có approval/config hợp lệ thì hệ thống không được âm th�
 | Policy lưu trong config file hay database có version? | Technical Lead/Operations | `[Need Confirm]` |
 | Authorization và retention của DQ API/findings? | Security/Data Governance | `[Need Confirm]` |
 
+## 9. Implementation References
+
+- Evaluator và HTTP route: `src/reconciliation/adapters/freshness.py`.
+- Schedule và `freshness_sla_seconds`: `src/reconciliation/adapters/daily_scheduler.py`.
+- Unit tests: `tests/unit/test_freshness_api.py`.

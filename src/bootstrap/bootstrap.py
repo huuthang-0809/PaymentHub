@@ -18,6 +18,8 @@ from canonical.adapters.india import MongoIndiaSource
 from canonical.adapters.vn import MongoVnSource, VNMapping
 from reconciliation.adapters import CsvFixtureParser, PostgreReconRepository
 from reconciliation.adapters.metrics import ReconciliationMetrics
+from reconciliation.adapters.daily_scheduler import load_schedules
+from reconciliation.adapters.freshness import FreshnessService
 from reconciliation.application.query import QueryReconciliation
 from reconciliation.adapters.query import PooledReconQuery, PooledReconRunDeleter
 from reconciliation.adapters.report import export_report
@@ -254,6 +256,11 @@ async def lifespan(app: FastAPI):
 
     app.state.query_reconciliation = QueryReconciliation(
         PooledReconQuery(postgres_pool), export_report,
+    )
+    # The API uses the same schedule configuration as the scheduler process.
+    app.state.freshness = FreshnessService(
+        load_schedules(os.getenv("RECON_SCHEDULES_JSON", "[]")),
+        PooledReconQuery(postgres_pool),
     )
     app.state.delete_reconciliation_run = PooledReconRunDeleter(postgres_pool)
     app.state.submit_reconciliation = submit_reconciliation

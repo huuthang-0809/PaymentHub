@@ -72,6 +72,7 @@ services:
       DATABASE_URL: postgresql://paymenthub:${POSTGRES_PASSWORD:-paymenthub}@postgres:5432/paymenthub
       MONGO_URI: mongodb://mongodb:27017
       RECON_WORKER_COUNT: ${RECON_WORKER_COUNT:-1}
+      RECON_SCHEDULES_JSON: ${RECON_SCHEDULES_JSON:-[]}
     ports:
       - "8000:8000"
     healthcheck:
