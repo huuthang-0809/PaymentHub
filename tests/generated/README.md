@@ -140,11 +140,15 @@ cha. Case này được sinh độc lập cho `asia-id` và `asia-ph`.
 
 Với India, system document có `transactionId` và chủ ý không có `referenceId`.
 Provider row dùng cùng `provider_txn_id`, còn `provider_ref_id` và `merchant_ref`
-để trống. Kết quả mong đợi là `MATCHED` theo `transactionId`.
+để trống. Refund có `relatedPaymentId` trỏ tới `transactionId` của payment cha;
+payment cha có trạng thái `refunded` và `amountRefunded` bằng tổng refund con.
+Vì vậy financial summary sinh được refund cross-check `MATCHED`.
 
-Với VN, case không reconciliation dùng `LINKCARD` và giữ hành vi adapter mặc
-định currency là `VND`. Asia và India sử dụng các giá trị nguồn tương ứng để tạo
-case không reconciliation và dữ liệu không hợp lệ.
+Với VN, refund dùng `PaymentMethod=REFUND`, có `OrderInfo` trỏ tới `_id` của
+payment cha và payment cha có `Status=4`. Financial summary sinh được refund
+cross-check `LINKED`. Case không reconciliation vẫn dùng `LINKCARD` và giữ hành
+vi adapter mặc định currency là `VND`. Asia và India sử dụng các giá trị nguồn
+tương ứng để tạo case không reconciliation và dữ liệu không hợp lệ.
 
 ### Lưu đáp án chính xác
 

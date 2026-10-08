@@ -185,13 +185,16 @@ def base_case(config: GeneratorConfig, scope: ScopeSpec, index: int) -> BaseCase
             else TxnType.CARD_LINK
         )
 
-    # Asia refunds inherit ExternalTxnId from the payment at cycle position 0.
-    if scope.region is Region.ASIA and mutation == "duplicate":
+    # Each cycle contains one refund linked to its payment at position 0.
+    if mutation == "duplicate":
         txn_type = TxnType.REFUND
-        parent_index = cycle * len(MUTATION_CYCLE)
-        provider_txn_id = (
-            f"{scope.provider.lower()}-{config.seed}-{parent_index:06d}"
-        )
+        # Asia identifies refunds by PaymentRefId, so its ExternalTxnId mirrors
+        # the parent. VN and India keep a distinct provider transaction ID.
+        if scope.region is Region.ASIA:
+            parent_index = cycle * len(MUTATION_CYCLE)
+            provider_txn_id = (
+                f"{scope.provider.lower()}-{config.seed}-{parent_index:06d}"
+            )
 
     start, end = scope_period(config, scope)
     count = scope_document_count(config, scope)

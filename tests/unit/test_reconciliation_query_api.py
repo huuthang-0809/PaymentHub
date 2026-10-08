@@ -99,6 +99,8 @@ def test_summary_results_filter_and_cursor(setup_api):
     assert first['items'][0]['result_key'] == 1
     assert second['items'][0]['result_key'] == 2
     assert second['next_cursor'] is None
+    all_results = client.get(base + '/results', params={'result': 'ALL'}).json()
+    assert len(all_results['items']) == 3
     assert client.get(base + '/results', params={'cursor': first['next_cursor']}).status_code == 422
     for params in [{'cursor': '!'}, {'cursor': 'W10='}, {'limit': 0}, {'limit': 201},
                    {'sort': 'raw'}, {'result': 'invalid'}]:

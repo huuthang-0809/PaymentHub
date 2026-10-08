@@ -18,7 +18,14 @@ def vn_document(config: GeneratorConfig, index: int) -> dict[str, Any]:
     amount: Any = str(major_amount(case))
     if case.mutation == "invalid-data":
         amount = "10.5"
-    method = "LINKCARD" if case.txn_type is TxnType.CARD_LINK else "CARD"
+    method = (
+        "LINKCARD"
+        if case.txn_type is TxnType.CARD_LINK
+        else case.txn_type.value
+        if case.txn_type is TxnType.REFUND
+        else "CARD"
+    )
+    parent_index = (index // len(MUTATION_CYCLE)) * len(MUTATION_CYCLE)
     return {
         "_id": case.system_txn_id,
         "Amount": amount,
@@ -30,14 +37,18 @@ def vn_document(config: GeneratorConfig, index: int) -> dict[str, Any]:
         "IsSentCallback": True,
         "MerchantId": case.merchant_id,
         "Message": None,
-        "OrderInfo": None,
+        "OrderInfo": (
+            f"{case.scope.slug}-{config.seed}-{parent_index:06d}"
+            if case.txn_type is TxnType.REFUND
+            else None
+        ),
         "PaidDate": case.transaction_time + timedelta(seconds=20),
         "PaymentMethod": method,
         "PaymentProvider": 1,
         "PaymentTransactionId": case.provider_txn_id,
         "PollCount": index % 4,
         "ServiceType": "PAYMENT",
-        "Status": 1,
+        "Status": 4 if case.mutation == "exact-match" else 1,
         "Success": True,
         "testBatchId": config.batch_id,
         "testCaseId": case.case_id,
@@ -101,10 +112,16 @@ def india_document(config: GeneratorConfig, index: int) -> dict[str, Any]:
     if case.mutation == "invalid-data":
         amount = Decimal("10.001")
     terminal = case.txn_type is not TxnType.TOKENIZATION
+    parent_index = (index // len(MUTATION_CYCLE)) * len(MUTATION_CYCLE)
+    refund_case = base_case(config, case.scope, parent_index + 4)
     return {
         "_id": case.system_txn_id,
         "amount": amount,
-        "amountRefunded": Decimal("0"),
+        "amountRefunded": (
+            major_amount(refund_case)
+            if case.mutation == "exact-match"
+            else Decimal("0")
+        ),
         "createdAt": case.transaction_time,
         "updatedAt": case.transaction_time + timedelta(seconds=30),
         "currency": case.scope.currency,
@@ -117,10 +134,22 @@ def india_document(config: GeneratorConfig, index: int) -> dict[str, Any]:
             case.transaction_time + timedelta(seconds=20) if terminal else None
         ),
         "reconcileAttempts": index % 4,
-        "relatedPaymentId": None,
+        "relatedPaymentId": (
+            f"{case.scope.provider.lower()}-{config.seed}-{parent_index:06d}"
+            if case.txn_type is TxnType.REFUND
+            else None
+        ),
         "serviceType": "PAYMENT",
         "sourceIds": [f"india-source-{index:06d}"],
-        "status": "captured" if terminal else "created",
+        "status": (
+            "processed"
+            if case.txn_type is TxnType.REFUND
+            else "refunded"
+            if case.mutation == "exact-match"
+            else "captured"
+            if terminal
+            else "created"
+        ),
         "terminal": terminal,
         "transactionId": case.provider_txn_id,
         "type": case.txn_type.value,

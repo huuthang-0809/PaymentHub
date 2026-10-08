@@ -11,6 +11,7 @@ from canonical.adapters.india import india_to_canonical
 from canonical.adapters.vn import vn_to_canonical
 from reconciliation.adapters import CsvFixtureParser
 from reconciliation.application.calendar import resolve_business_period
+from reconciliation.application.summary import build_financial_summary
 from reconciliation.domain import MatchingEngine, ReconResultType
 from tests.data_generator.generator import (
     ASIA_MAPPING,
@@ -124,6 +125,20 @@ def test_region_specific_identity_cases_are_preserved() -> None:
         assert refund["ExternalTxnId"] == payment["ExternalTxnId"]
         assert refund["RefundFor"] == payment["_id"]
         assert refund["PaymentRefId"] != payment["PaymentRefId"]
+
+    vn_payment = datasets[DATABASE_VN][0]
+    vn_refund = datasets[DATABASE_VN][4]
+    assert vn_payment["Status"] == 4
+    assert vn_refund["PaymentMethod"] == "REFUND"
+    assert vn_refund["OrderInfo"] == vn_payment["_id"]
+
+    india_payment = datasets[DATABASE_INDIA][0]
+    india_refund = datasets[DATABASE_INDIA][4]
+    assert india_payment["status"] == "refunded"
+    assert india_payment["amountRefunded"] == india_refund["amount"]
+    assert india_refund["type"] == "REFUND"
+    assert india_refund["status"] == "processed"
+    assert india_refund["relatedPaymentId"] == india_payment["transactionId"]
 
     for document in datasets[DATABASE_INDIA]:
         assert document["transactionId"]
@@ -304,3 +319,36 @@ def test_generated_provider_statements_match_the_exact_oracle() -> None:
         assert sorted(actual_results, key=sort_key) == sorted(
             expected_results, key=sort_key
         )
+
+
+def test_generated_refunds_populate_financial_summary_panels() -> None:
+    config = GeneratorConfig(seed=20260923, records_per_region=32)
+    datasets, _ = generate_dataset(config)
+    statements = generate_provider_statements(datasets, config)
+    cases = (
+        (
+            "onepay_20260923.csv",
+            [vn_to_canonical(row, VN_MAPPING) for row in datasets[DATABASE_VN]],
+            "LINKED",
+        ),
+        (
+            "razorpay_20260923.csv",
+            [india_to_canonical(row) for row in datasets[DATABASE_INDIA]],
+            "MATCHED",
+        ),
+    )
+
+    for filename, system_rows, expected_cross_check in cases:
+        provider_rows = CsvFixtureParser().parse(
+            statements[filename].encode(), filename
+        ).rows
+        results = MatchingEngine().match(filename, list(provider_rows), system_rows)
+        summary = build_financial_summary(results)
+
+        assert summary.refunds_by_currency
+        assert sum(item.count for item in summary.refunds_by_currency) > 0
+        assert summary.refund_parent_metrics.refunded_parent_count > 0
+        assert summary.refund_cross_checks
+        assert {item.status for item in summary.refund_cross_checks} == {
+            expected_cross_check
+        }
