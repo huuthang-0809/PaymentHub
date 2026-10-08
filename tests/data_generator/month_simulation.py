@@ -50,19 +50,18 @@ def _emit(event: str, context: dict[str, object]) -> None:
     print(json.dumps({"event": event, **context}, separators=(",", ":")), flush=True)
 
 
-def generate_data() -> None:
-    start = date.fromisoformat(os.getenv("SIMULATION_START_DATE", "2026-09-01"))
-    days = int(os.getenv("SIMULATION_DAYS", "30"))
-    missing_statement_count = int(
-        os.getenv("SIMULATION_MISSING_STATEMENT_COUNT", "2")
-    )
-    write_ground_truth = (
-        os.getenv("SIMULATION_WRITE_GROUND_TRUTH", "false").lower() == "true"
-    )
-    records = int(os.getenv("RECORDS_PER_REGION", "100"))
+def generate_data(
+    *,
+    start: date,
+    days: int,
+    records: int,
+    missing_statement_count: int = 0,
+    write_ground_truth: bool = False,
+    output: Path = Path("/test-data/month-simulation"),
+    statement_directory: Path | None = None,
+) -> None:
     mongo_uri = os.getenv("MONGO_URI", "mongodb://mongodb:27017")
-    output = Path(os.getenv("SIMULATION_OUTPUT_DIR", "/test-data/month-simulation"))
-    statements_dir = output / "provider-statements"
+    statements_dir = statement_directory if statement_directory is not None else output / "provider-statements"
     truth_dir = output / "ground-truth"
     statements_dir.mkdir(parents=True, exist_ok=True)
     if write_ground_truth:
@@ -119,7 +118,14 @@ def generate_data() -> None:
 
 
 def main() -> None:
-    generate_data()
+    generate_data(
+        start=date.fromisoformat(os.getenv("SIMULATION_START_DATE", "2026-09-01")),
+        days=int(os.getenv("SIMULATION_DAYS", "30")),
+        records=int(os.getenv("RECORDS_PER_REGION", "100")),
+        missing_statement_count=int(os.getenv("SIMULATION_MISSING_STATEMENT_COUNT", "2")),
+        write_ground_truth=os.getenv("SIMULATION_WRITE_GROUND_TRUTH", "false").lower() == "true",
+        output=Path(os.getenv("SIMULATION_OUTPUT_DIR", "/test-data/month-simulation")),
+    )
 
 
 if __name__ == "__main__":
