@@ -1,12 +1,13 @@
-route: # route tree: all alert send to paymenthub-api
-  receiver: paymenthub-api
+route:
+  # Alertmanager remains the source of truth for active/resolved alerts. Grafana
+  # reads it directly; the application no longer receives alert webhooks.
+  receiver: grafana-only
   group_by: [alertname, region, tenant_id, provider, run_id, business_date]
   group_wait: 5s # first alert wait 5s for grouping
   group_interval: 30s # after send, wait at least 30s before send new update for group
   repeat_interval: 4h # alert still firing -> repeat after 4h
 
 receivers:
-  - name: paymenthub-api
-    webhook_configs: # alertmanager post alert to api
-      - url: http://api:8000/internal/alerts/webhook
-        send_resolved: true
+  # Intentionally empty for local development. Add Slack/email/PagerDuty here
+  # when a real notification destination is available.
+  - name: grafana-only

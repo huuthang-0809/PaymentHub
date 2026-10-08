@@ -1,15 +1,18 @@
 import hashlib
 import json
+import logging
 from collections import Counter
 from contextlib import contextmanager
 from dataclasses import asdict
 from datetime import date, datetime, time
 from pathlib import Path
+from time import sleep
 from typing import Iterator
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from psycopg import Connection
+from psycopg.errors import DeadlockDetected
 from psycopg.types.json import Jsonb
 
 from reconciliation.application.ports import (
@@ -24,6 +27,9 @@ from shared_kernel import CanonicalStatus, Region, TxnType
 
 
 INSERT_BATCH_SIZE = 10_000
+COMPLETE_RUN_MAX_ATTEMPTS = 3
+COMPLETE_RUN_RETRY_DELAY_SECONDS = 15
+logger = logging.getLogger(__name__)
 
 
 class PostgreReconRepository:
@@ -319,12 +325,51 @@ class PostgreReconRepository:
         financial_summary=None,
         provider_raw_rows=None,
     ) -> None:
+        for attempt in range(1, COMPLETE_RUN_MAX_ATTEMPTS + 1):
+            try:
+                self._complete_run_once(
+                    claim=claim,
+                    system_rows=system_rows,
+                    provider_rows=provider_rows,
+                    provider_txns=provider_txns,
+                    results=results,
+                    financial_summary=financial_summary,
+                    provider_raw_rows=provider_raw_rows,
+                )
+                return
+            except DeadlockDetected:
+                if attempt == COMPLETE_RUN_MAX_ATTEMPTS:
+                    raise
+                logger.warning(
+                    "Deadlock while persisting reconciliation; retrying",
+                    extra={
+                        "run_id": str(claim.run_id),
+                        "attempt": attempt,
+                        "max_attempts": COMPLETE_RUN_MAX_ATTEMPTS,
+                        "retry_delay_seconds": COMPLETE_RUN_RETRY_DELAY_SECONDS,
+                    },
+                )
+                sleep(COMPLETE_RUN_RETRY_DELAY_SECONDS)
+
+    def _complete_run_once(
+        self,
+        *,
+        claim: RunClaim,
+        system_rows: int,
+        provider_rows: int,
+        provider_txns: list[ProviderTransaction],
+        results: list[ReconResult],
+        financial_summary=None,
+        provider_raw_rows=None,
+    ) -> None:
         run_id, job_run_id = claim.run_id, claim.job_run_id
         summary = Counter(result.result_type.value for result in results)
         if financial_summary is None:
             # Keep direct repository callers compatible; the normal application
             # flow passes the summary it already calculated.
             financial_summary = asdict(build_financial_summary(results))
+        # JsonlRawRowStore rewinds on each __iter__ call, so every retry reads
+        # raw evidence from the beginning after the previous transaction rolls back.
         raw_rows = iter(provider_raw_rows or ())
 
         def persisted_raw(transaction: ProviderTransaction):
@@ -332,7 +377,8 @@ class PostgreReconRepository:
                 return transaction.raw
             return next(raw_rows, {})
 
-        with self.connection.transaction(), self.connection.cursor() as cursor: #transaction: for begin a transaction and cursor: for execute SQL
+        # Commit partition DDL before writing the run's results.
+        with self.connection.transaction(), self.connection.cursor() as cursor:
             business_date = claim.business_date
             if business_date is None:
                 cursor.execute(
@@ -348,6 +394,7 @@ class PostgreReconRepository:
                 "SELECT ensure_reconciliation_day_partitions(%s)",
                 (business_date,),
             )
+        with self.connection.transaction(), self.connection.cursor() as cursor:
             provider_sql = """
                 INSERT INTO provider_txn (
                     business_date, run_id, job_run_id, region, tenant_id,
@@ -479,7 +526,8 @@ class PostgreReconRepository:
         start_utc: datetime,
         end_utc: datetime,
     ) -> tuple[ProviderTransaction, ...]:
-        with self.connection.cursor() as cursor:
+        # Release read locks before matching and partition creation.
+        with self.connection.transaction(), self.connection.cursor() as cursor:
             cursor.execute(
                 """
                 SELECT p.provider, p.region, p.tenant_id, p.provider_txn_id,
