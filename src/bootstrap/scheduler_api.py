@@ -149,6 +149,11 @@ def create_app() -> FastAPI:
     async def generation_status(job_id: str):
         return get_job("generation", job_id)
 
+    @app.get("/generation-jobs", response_model=list[JobStatus])
+    async def generation_jobs():
+        with lock:
+            return [job for (kind, _), job in reversed(jobs.items()) if kind == "generation"]
+
     @app.post("/simulation-jobs", status_code=202, response_model=JobStatus)
     async def simulation(request: SimulationRequest, background: BackgroundTasks):
         return submit("simulation", background, lambda: run_simulation(request))
@@ -156,6 +161,11 @@ def create_app() -> FastAPI:
     @app.get("/simulation-jobs/{job_id}", response_model=JobStatus)
     async def simulation_status(job_id: str):
         return get_job("simulation", job_id)
+
+    @app.get("/simulation-jobs", response_model=list[JobStatus])
+    async def simulation_jobs():
+        with lock:
+            return [job for (kind, _), job in reversed(jobs.items()) if kind == "simulation"]
 
     return app
 

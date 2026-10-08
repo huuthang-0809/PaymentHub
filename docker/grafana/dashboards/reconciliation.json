@@ -30,6 +30,12 @@
       "url": "/alerting/list",
       "icon": "bell",
       "targetBlank": false
+    },
+    {
+      "title": "Generation & Simulation",
+      "type": "link",
+      "url": "/d/paymenthub-scheduler-jobs",
+      "targetBlank": false
     }
   ],
   "panels": [

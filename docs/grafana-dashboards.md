@@ -1,6 +1,6 @@
 # Reconciliation dashboards
 
-Hai dashboard được provision từ `docker/grafana/dashboards` và tự cập nhật mỗi 30 giây.
+Ba dashboard được provision từ `docker/grafana/dashboards`; Grafana kiểm tra thay đổi file mỗi 30 giây.
 
 ## 1. Runs & Operations
 
@@ -26,8 +26,22 @@ Run ID là textbox đồng bộ URL, nên link trực tiếp vẫn mở được
 
 Đặt `Report API URL` thành địa chỉ API truy cập được từ trình duyệt khi chạy ngoài localhost. Export tải toàn bộ run; bảng evidence có giới hạn 10.000 dòng và bộ lọc Outcome.
 
+## 3. Generation & Simulation
+
+Mở `http://localhost:8080/d/paymenthub-scheduler-jobs` qua reverse proxy hoặc cùng đường dẫn trên Grafana cổng `3000`.
+
+- Nhập Start date, Days, Records / region, Missing statements, Seconds / day và Workers ở đầu dashboard. Nhấn Enter sau khi sửa mỗi ô.
+- Bấm **Generate data** rồi xác nhận để gọi `POST /generation-jobs`.
+- Chờ Generation jobs hiện **COMPLETED**, sau đó bấm **Start simulation** để gọi `POST /simulation-jobs` với cùng ngày bắt đầu và số ngày.
+- Hai bảng job tự refresh mỗi 5 giây qua `GET /generation-jobs` và `GET /simulation-jobs`; job mới nhất nằm trên cùng. Hiển thị RUNNING, COMPLETED, FAILED và lỗi nếu có.
+- Chỉ một job chạy tại một thời điểm; submit khi đang bận trả `409`. Bảng rỗng nghĩa là chưa có job kể từ lúc scheduler khởi động. Trạng thái vẫn chỉ lưu trong bộ nhớ.
+
+Dashboard dùng Actions và bảng có sẵn của Grafana, cùng datasource Infinity `scheduler-api`. Không cần thêm plugin. Hai nút POST gọi scheduler qua datasource ở phía Grafana server, nên hoạt động ở cả cổng `3000` và cổng proxy `8080`. Compose bật `vizActionsAuth` để Grafana 13.1 hỗ trợ kiểu Action này; khi đổi cấu hình này cần recreate service Grafana.
+
+Khởi động scheduler và proxy theo hướng dẫn trong `README.md`. Khi thêm datasource mới, restart Grafana hoặc gọi `POST /api/admin/provisioning/datasources/reload` bằng tài khoản Grafana admin.
+
 ## Provisioning
 
-Hai file giữ nguyên UID để cập nhật dashboard đang có, không sinh dashboard thứ ba. Dashboard Operations thay thế dashboard Prometheus overview cũ. Datasource Infinity hiện có được dùng lại cho API, datasource Prometheus cho alert.
+Hai dashboard đối soát giữ nguyên UID. Dashboard mới dùng UID `paymenthub-scheduler-jobs`. Dashboard Operations thay thế dashboard Prometheus overview cũ. Datasource Infinity `reconciliation-api` dùng cho API đối soát, `scheduler-api` cho trạng thái job và datasource Prometheus cho alert.
 
 Grafana đang chạy với bind mount sẽ tự đọc thay đổi theo chu kỳ provisioning 30 giây; không cần restart khi chỉ thay JSON. Kiểm tra `/api/dashboards/uid/paymenthub-reconciliation`, `/api/dashboards/uid/paymenthub-reconciliation-api` và `/api/datasources/uid/reconciliation-api/health` bằng tài khoản Grafana có quyền đọc.
