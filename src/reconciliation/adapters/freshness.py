@@ -41,7 +41,7 @@ class FreshnessService:
             and (wanted_provider is None or schedule.provider == wanted_provider)
         ]
         items = [self._evaluate(schedule, now) for schedule in schedules]
-        return {"items": items, "meta": {"data_as_of": now}}
+        return {"items": items, "meta": {"data_as_of": now}} # data_as_of is api runtime
 
     def _evaluate(self, schedule: DailySchedule, now: datetime) -> dict:
         # ZoneInfo applies the schedule's IANA timezone and handles UTC offsets.
@@ -82,17 +82,17 @@ class FreshnessService:
                 break
             consecutive_failures += 1
 
-        if current and current["status"] == "COMPLETED":
+        if current and current["status"] == "COMPLETED": # complete run
             status, reason = "FRESH", "RUN_COMPLETED"
-        elif local_now <= deadline:
+        elif local_now <= deadline: # within SLA
             status, reason = "FRESH", "WITHIN_SLA"
-        elif current and current["status"] in {"PENDING", "RUNNING"}:
+        elif current and current["status"] in {"PENDING", "RUNNING"}: # deadline exceeded
             status, reason = "LATE", "RUN_NOT_COMPLETED"
-        elif current and consecutive_failures >= 2:
+        elif current and consecutive_failures >= 2: # 2 times fail
             status, reason = "FAILED", "CONSECUTIVE_FAILURES"
-        elif current:
+        elif current: # 1 time fail
             status, reason = "LATE", "RUN_FAILED_RETRYABLE"
-        else:
+        else: # missing run
             status, reason = "MISSING", "NO_RUN_AFTER_SLA"
 
         return {
