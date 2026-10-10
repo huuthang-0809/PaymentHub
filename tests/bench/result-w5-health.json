@@ -1,0 +1,119 @@
+{
+  "contract_status": "AWAITING_TECHNICAL_LEAD_APPROVAL",
+  "dataset": {
+    "cases_per_rule": 4,
+    "evaluation_delay_seconds": 60,
+    "negative_cases_per_rule": 2,
+    "positive_cases_per_rule": 2,
+    "rules": 9,
+    "scheduler_interval_seconds": 300
+  },
+  "limitations": [
+    "Synthetic balanced acceptance fixture; not production prevalence.",
+    "MTTD starts at the beginning of the first breached closed window.",
+    "Thresholds remain provisional until Technical Lead approval."
+  ],
+  "overall": {
+    "fn": 0,
+    "fp": 0,
+    "mttd_seconds": 593.3333333333334,
+    "precision": 1.0,
+    "recall": 1.0,
+    "tn": 18,
+    "tp": 18
+  },
+  "per_rule": [
+    {
+      "fn": 0,
+      "fp": 0,
+      "mttd_seconds": 660,
+      "precision": 1.0,
+      "recall": 1.0,
+      "rule_id": "W5_LOW_SUCCESS_CRITICAL_V1",
+      "tn": 2,
+      "tp": 2
+    },
+    {
+      "fn": 0,
+      "fp": 0,
+      "mttd_seconds": 960,
+      "precision": 1.0,
+      "recall": 1.0,
+      "rule_id": "W5_LOW_SUCCESS_WARNING_V1",
+      "tn": 2,
+      "tp": 2
+    },
+    {
+      "fn": 0,
+      "fp": 0,
+      "mttd_seconds": 360,
+      "precision": 1.0,
+      "recall": 1.0,
+      "rule_id": "W5_LOW_SUCCESS_SEVERE_V1",
+      "tn": 2,
+      "tp": 2
+    },
+    {
+      "fn": 0,
+      "fp": 0,
+      "mttd_seconds": 660,
+      "precision": 1.0,
+      "recall": 1.0,
+      "rule_id": "W5_HIGH_FAILURE_WARNING_V1",
+      "tn": 2,
+      "tp": 2
+    },
+    {
+      "fn": 0,
+      "fp": 0,
+      "mttd_seconds": 360,
+      "precision": 1.0,
+      "recall": 1.0,
+      "rule_id": "W5_HIGH_FAILURE_CRITICAL_V1",
+      "tn": 2,
+      "tp": 2
+    },
+    {
+      "fn": 0,
+      "fp": 0,
+      "mttd_seconds": 960,
+      "precision": 1.0,
+      "recall": 1.0,
+      "rule_id": "W5_HIGH_FAILURE_ELEVATED_V1",
+      "tn": 2,
+      "tp": 2
+    },
+    {
+      "fn": 0,
+      "fp": 0,
+      "mttd_seconds": 660,
+      "precision": 1.0,
+      "recall": 1.0,
+      "rule_id": "W5_STALE_FAST_V1",
+      "tn": 2,
+      "tp": 2
+    },
+    {
+      "fn": 0,
+      "fp": 0,
+      "mttd_seconds": 360,
+      "precision": 1.0,
+      "recall": 1.0,
+      "rule_id": "W5_STALE_STANDARD_V1",
+      "tn": 2,
+      "tp": 2
+    },
+    {
+      "fn": 0,
+      "fp": 0,
+      "mttd_seconds": 360,
+      "precision": 1.0,
+      "recall": 1.0,
+      "rule_id": "W5_STALE_CRITICAL_V1",
+      "tn": 2,
+      "tp": 2
+    }
+  ],
+  "profile": "WEEK5_PROVISIONAL",
+  "schema_version": 1
+}
