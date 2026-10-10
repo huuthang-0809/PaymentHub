@@ -1,0 +1,82 @@
+{
+  "onepay-vn": [
+    {
+      "cycle_id": "c1-normal",
+      "health_status": "HEALTHY",
+      "success_rate": "0.950000",
+      "failure_rate": "0.050000",
+      "rate_rule_statuses": ["PASS", "PASS"],
+      "alert_actions": []
+    },
+    {
+      "cycle_id": "c2-first-breach",
+      "health_status": "UNHEALTHY",
+      "success_rate": "0.600000",
+      "failure_rate": "0.400000",
+      "rate_rule_statuses": ["BREACH", "BREACH"],
+      "alert_actions": []
+    },
+    {
+      "cycle_id": "c3-open",
+      "health_status": "UNHEALTHY",
+      "success_rate": "0.500000",
+      "failure_rate": "0.500000",
+      "rate_rule_statuses": ["BREACH", "BREACH"],
+      "alert_actions": [
+        {"rule_id": "DEMO_LOW_SUCCESS_RATE_V1", "action": "OPEN", "status": "OPEN", "occurrence_count": 1, "notification_due": true},
+        {"rule_id": "DEMO_HIGH_FAILURE_RATE_V1", "action": "OPEN", "status": "OPEN", "occurrence_count": 1, "notification_due": true}
+      ]
+    },
+    {
+      "cycle_id": "c4-continued-breach",
+      "health_status": "UNHEALTHY",
+      "success_rate": "0.636364",
+      "failure_rate": "0.363636",
+      "rate_rule_statuses": ["BREACH", "BREACH"],
+      "alert_actions": [
+        {"rule_id": "DEMO_LOW_SUCCESS_RATE_V1", "action": "UPDATE", "status": "OPEN", "occurrence_count": 2, "notification_due": false},
+        {"rule_id": "DEMO_HIGH_FAILURE_RATE_V1", "action": "UPDATE", "status": "OPEN", "occurrence_count": 2, "notification_due": false}
+      ]
+    },
+    {
+      "cycle_id": "c5-first-recovery",
+      "health_status": "HEALTHY",
+      "success_rate": "0.950000",
+      "failure_rate": "0.050000",
+      "rate_rule_statuses": ["PASS", "PASS"],
+      "alert_actions": []
+    },
+    {
+      "cycle_id": "c6-resolve",
+      "health_status": "HEALTHY",
+      "success_rate": "0.950000",
+      "failure_rate": "0.050000",
+      "rate_rule_statuses": ["PASS", "PASS"],
+      "alert_actions": [
+        {"rule_id": "DEMO_LOW_SUCCESS_RATE_V1", "action": "RESOLVE", "status": "RESOLVED", "occurrence_count": 2, "notification_due": true},
+        {"rule_id": "DEMO_HIGH_FAILURE_RATE_V1", "action": "RESOLVE", "status": "RESOLVED", "occurrence_count": 2, "notification_due": true}
+      ]
+    }
+  ],
+  "stripe-asia-id": {
+    "all_cycles_health_status": "HEALTHY",
+    "operation_event_count_each_cycle": 20,
+    "rate_rule_statuses": ["INSUFFICIENT_DATA", "INSUFFICIENT_DATA"],
+    "freshness_rule_status": "PASS",
+    "alert_actions": []
+  },
+  "razorpay-india": {
+    "case_id": "no-data",
+    "health_status": "NO_DATA",
+    "rule_statuses": ["INSUFFICIENT_DATA", "INSUFFICIENT_DATA", "INSUFFICIENT_DATA"],
+    "alert_actions": []
+  },
+  "precedence_proof": {
+    "cycle_id": "c3-open",
+    "reasons": [
+      {"rule_id": "DEMO_LOW_SUCCESS_RATE_V1", "health_impact": "UNHEALTHY"},
+      {"rule_id": "DEMO_HIGH_FAILURE_RATE_V1", "health_impact": "DEGRADED"}
+    ],
+    "result": "UNHEALTHY"
+  }
+}

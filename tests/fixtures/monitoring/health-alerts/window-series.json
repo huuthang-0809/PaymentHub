@@ -1,0 +1,68 @@
+{
+  "rule_config": "demo-rule-config.json",
+  "window_size_minutes": 5,
+  "scopes": {
+    "onepay-vn": {"region": "VN", "tenant_scope": "", "provider": "ONEPAY"},
+    "stripe-asia-id": {"region": "ASIA", "tenant_scope": "asia-id", "provider": "STRIPE"},
+    "razorpay-india": {"region": "INDIA", "tenant_scope": "", "provider": "RAZORPAY"}
+  },
+  "cycles": [
+    {
+      "cycle_id": "c1-normal",
+      "evaluated_at": "2026-10-05T10:06:00Z",
+      "windows": [
+        {"scope": "onepay-vn", "window_start": "2026-10-05T10:00:00Z", "window_end": "2026-10-05T10:05:00Z", "operation_event_count": 100, "success_count": 95, "failed_count": 5, "data_as_of": "2026-10-05T10:04:50Z"},
+        {"scope": "stripe-asia-id", "window_start": "2026-10-05T10:00:00Z", "window_end": "2026-10-05T10:05:00Z", "operation_event_count": 20, "success_count": 10, "failed_count": 10, "data_as_of": "2026-10-05T10:04:50Z"}
+      ]
+    },
+    {
+      "cycle_id": "c2-first-breach",
+      "evaluated_at": "2026-10-05T10:11:00Z",
+      "windows": [
+        {"scope": "onepay-vn", "window_start": "2026-10-05T10:05:00Z", "window_end": "2026-10-05T10:10:00Z", "operation_event_count": 100, "success_count": 60, "failed_count": 40, "data_as_of": "2026-10-05T10:09:50Z"},
+        {"scope": "stripe-asia-id", "window_start": "2026-10-05T10:05:00Z", "window_end": "2026-10-05T10:10:00Z", "operation_event_count": 20, "success_count": 10, "failed_count": 10, "data_as_of": "2026-10-05T10:09:50Z"}
+      ]
+    },
+    {
+      "cycle_id": "c3-open",
+      "evaluated_at": "2026-10-05T10:16:00Z",
+      "windows": [
+        {"scope": "onepay-vn", "window_start": "2026-10-05T10:10:00Z", "window_end": "2026-10-05T10:15:00Z", "operation_event_count": 120, "success_count": 60, "failed_count": 60, "data_as_of": "2026-10-05T10:14:50Z"},
+        {"scope": "stripe-asia-id", "window_start": "2026-10-05T10:10:00Z", "window_end": "2026-10-05T10:15:00Z", "operation_event_count": 20, "success_count": 10, "failed_count": 10, "data_as_of": "2026-10-05T10:14:50Z"}
+      ]
+    },
+    {
+      "cycle_id": "c4-continued-breach",
+      "evaluated_at": "2026-10-05T10:21:00Z",
+      "windows": [
+        {"scope": "onepay-vn", "window_start": "2026-10-05T10:15:00Z", "window_end": "2026-10-05T10:20:00Z", "operation_event_count": 110, "success_count": 70, "failed_count": 40, "data_as_of": "2026-10-05T10:19:50Z"},
+        {"scope": "stripe-asia-id", "window_start": "2026-10-05T10:15:00Z", "window_end": "2026-10-05T10:20:00Z", "operation_event_count": 20, "success_count": 10, "failed_count": 10, "data_as_of": "2026-10-05T10:19:50Z"}
+      ]
+    },
+    {
+      "cycle_id": "c5-first-recovery",
+      "evaluated_at": "2026-10-05T10:26:00Z",
+      "windows": [
+        {"scope": "onepay-vn", "window_start": "2026-10-05T10:20:00Z", "window_end": "2026-10-05T10:25:00Z", "operation_event_count": 100, "success_count": 95, "failed_count": 5, "data_as_of": "2026-10-05T10:24:50Z"},
+        {"scope": "stripe-asia-id", "window_start": "2026-10-05T10:20:00Z", "window_end": "2026-10-05T10:25:00Z", "operation_event_count": 20, "success_count": 10, "failed_count": 10, "data_as_of": "2026-10-05T10:24:50Z"}
+      ]
+    },
+    {
+      "cycle_id": "c6-resolve",
+      "evaluated_at": "2026-10-05T10:31:00Z",
+      "windows": [
+        {"scope": "onepay-vn", "window_start": "2026-10-05T10:25:00Z", "window_end": "2026-10-05T10:30:00Z", "operation_event_count": 200, "success_count": 190, "failed_count": 10, "data_as_of": "2026-10-05T10:29:50Z"},
+        {"scope": "stripe-asia-id", "window_start": "2026-10-05T10:25:00Z", "window_end": "2026-10-05T10:30:00Z", "operation_event_count": 20, "success_count": 10, "failed_count": 10, "data_as_of": "2026-10-05T10:29:50Z"}
+      ]
+    }
+  ],
+  "edge_cases": [
+    {
+      "case_id": "no-data",
+      "scope": "razorpay-india",
+      "evaluated_at": "2026-10-05T10:31:00Z",
+      "windows": [],
+      "data_as_of": null
+    }
+  ]
+}

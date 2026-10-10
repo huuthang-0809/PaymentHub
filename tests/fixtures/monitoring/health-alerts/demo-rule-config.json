@@ -1,0 +1,53 @@
+{
+  "profile": "DEMO_ONLY",
+  "rules": [
+    {
+      "rule_id": "DEMO_LOW_SUCCESS_RATE_V1",
+      "rule_version": 1,
+      "metric": "success_rate",
+      "comparison": "LT",
+      "threshold": "0.800000",
+      "minimum_sample": 100,
+      "window_size_minutes": 5,
+      "lookback_windows": 1,
+      "breach_windows": 2,
+      "recovery_windows": 2,
+      "health_impact": "UNHEALTHY",
+      "severity": "CRITICAL",
+      "cooldown_seconds": 900,
+      "runbook_ref": "fixture://low-success-rate"
+    },
+    {
+      "rule_id": "DEMO_HIGH_FAILURE_RATE_V1",
+      "rule_version": 1,
+      "metric": "failure_rate",
+      "comparison": "GTE",
+      "threshold": "0.200000",
+      "minimum_sample": 100,
+      "window_size_minutes": 5,
+      "lookback_windows": 1,
+      "breach_windows": 2,
+      "recovery_windows": 2,
+      "health_impact": "DEGRADED",
+      "severity": "WARNING",
+      "cooldown_seconds": 900,
+      "runbook_ref": "fixture://high-failure-rate"
+    },
+    {
+      "rule_id": "DEMO_STALE_DATA_V1",
+      "rule_version": 1,
+      "metric": "freshness_lag_seconds",
+      "comparison": "GT",
+      "threshold": 600,
+      "minimum_sample": null,
+      "window_size_minutes": null,
+      "lookback_windows": 1,
+      "breach_windows": 1,
+      "recovery_windows": 1,
+      "health_impact": "DEGRADED",
+      "severity": "WARNING",
+      "cooldown_seconds": 1800,
+      "runbook_ref": "fixture://stale-data"
+    }
+  ]
+}
