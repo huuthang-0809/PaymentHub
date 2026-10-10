@@ -1,10 +1,17 @@
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
 from typing import Any
 
 from monitoring.domain import (
+    AlertRecord,
+    AlertStatus,
+    AlertTransition,
     CanonicalEvent,
+    EvaluationScope,
     EventTiming,
+    HealthWindow,
+    RuleConfig,
+    RuleState,
     WatermarkPolicy,
     WindowAggregate,
 )
@@ -144,3 +151,146 @@ class InMemoryEventUnitOfWork:
 
     def record_summary(self, summary: Mapping[str, Any]) -> None:
         self.summary = dict(summary)
+
+
+class InMemoryHealthMetricSource:
+    def __init__(self) -> None:
+        self._windows: dict[EvaluationScope, tuple[HealthWindow, ...]] = {}
+
+    def set_windows(
+        self, scope: EvaluationScope, windows: Sequence[HealthWindow]
+    ) -> None:
+        self._windows[scope] = tuple(windows)
+
+    def list_closed_windows(
+        self, scope: EvaluationScope, *, evaluated_at: datetime
+    ) -> tuple[HealthWindow, ...]:
+        return tuple(
+            window
+            for window in self._windows.get(scope, ())
+            if window.window_end <= evaluated_at
+        )
+
+
+class InMemoryRuleConfigRepository:
+    def __init__(self, configs: Sequence[RuleConfig]) -> None:
+        self._configs = tuple(configs)
+
+    def list_active(self) -> tuple[RuleConfig, ...]:
+        return self._configs
+
+
+class InMemoryRuleStateRepository:
+    def __init__(self) -> None:
+        self._states: dict[tuple[EvaluationScope, str, int], RuleState] = {}
+
+    def list_for_scope(self, scope: EvaluationScope) -> tuple[RuleState, ...]:
+        return tuple(
+            state
+            for (candidate, _, _), state in self._states.items()
+            if candidate == scope
+        )
+
+    def save_all(
+        self, scope: EvaluationScope, states: Sequence[RuleState]
+    ) -> None:
+        for state in states:
+            self._states[(scope, state.rule_id, state.rule_version)] = state
+
+
+class InMemoryAlertRepository:
+    def __init__(self) -> None:
+        self._alerts: dict[str, AlertRecord] = {}
+
+    def get_open(
+        self,
+        scope: EvaluationScope,
+        *,
+        rule_id: str,
+        rule_version: int,
+    ) -> AlertRecord | None:
+        matches = tuple(
+            alert
+            for alert in self._alerts.values()
+            if alert.scope == scope
+            and alert.rule_id == rule_id
+            and alert.rule_version == rule_version
+            and alert.status is AlertStatus.OPEN
+        )
+        if len(matches) > 1:
+            raise RuntimeError("multiple OPEN alerts for one dedup key")
+        return matches[0] if matches else None
+
+    def save(self, alert: AlertRecord) -> None:
+        self._alerts[alert.alert_id] = alert
+
+    def get(self, alert_id: str) -> AlertRecord:
+        return self._alerts[alert_id]
+
+    def list_alerts(self) -> tuple[AlertRecord, ...]:
+        return tuple(self._alerts.values())
+
+
+class InMemoryAlertUnitOfWork:
+    def __init__(self) -> None:
+        self.alerts = InMemoryAlertRepository()
+        self.rule_states = InMemoryRuleStateRepository()
+        self.commits = 0
+        self._evaluations: set[tuple[EvaluationScope, datetime]] = set()
+        self._alert_snapshot: dict[str, AlertRecord] = {}
+        self._state_snapshot: dict[
+            tuple[EvaluationScope, str, int], RuleState
+        ] = {}
+        self._evaluation_snapshot: set[tuple[EvaluationScope, datetime]] = set()
+        self._committed = False
+
+    def __enter__(self) -> "InMemoryAlertUnitOfWork":
+        self._alert_snapshot = dict(self.alerts._alerts)
+        self._state_snapshot = dict(self.rule_states._states)
+        self._evaluation_snapshot = set(self._evaluations)
+        self._committed = False
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: object | None,
+    ) -> None:
+        if not self._committed:
+            self.alerts._alerts = self._alert_snapshot
+            self.rule_states._states = self._state_snapshot
+            self._evaluations = self._evaluation_snapshot
+
+    def evaluation_exists(
+        self, scope: EvaluationScope, evaluated_at: datetime
+    ) -> bool:
+        return (scope, evaluated_at) in self._evaluations
+
+    def record_evaluation(self, evaluation, transitions: Sequence[AlertTransition]) -> None:
+        self._evaluations.add((evaluation.scope, evaluation.evaluated_at))
+
+    def commit(self) -> None:
+        self._committed = True
+        self.commits += 1
+
+
+class RecordingNotificationPort:
+    def __init__(
+        self,
+        *,
+        fail: bool = False,
+        commit_probe: Callable[[], bool] | None = None,
+    ) -> None:
+        self.fail = fail
+        self.commit_probe = commit_probe
+        self.attempts: list[tuple[AlertRecord, AlertTransition]] = []
+        self.delivered: list[tuple[AlertRecord, AlertTransition]] = []
+
+    def send(self, alert: AlertRecord, transition: AlertTransition) -> None:
+        if self.commit_probe is not None and not self.commit_probe():
+            raise AssertionError("notification attempted before alert commit")
+        self.attempts.append((alert, transition))
+        if self.fail:
+            raise RuntimeError("simulated notification failure")
+        self.delivered.append((alert, transition))
