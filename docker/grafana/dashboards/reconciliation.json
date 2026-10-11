@@ -44,7 +44,7 @@
         "type": "yesoreyeram-infinity-datasource",
         "uid": "reconciliation-api"
       },
-      "description": "Click Run ID to open details. Filter columns by status, scope and date. Loads up to 50 cursor pages (10,000 runs), sorted by Started within loaded rows; not unlimited history.",
+      "description": "Click Run ID to open details. Filter columns by status, scope and date. Loads up to 50 cursor pages (10,000 runs), sorted by Started within loaded rows; not unlimited history. Delete removes a completed or failed run and its provider rows, results and job log after confirmation. Pending and running runs are protected by the API. Refresh the dashboard after deletion.",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -129,6 +129,54 @@
                 "value": 260
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Action"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "actions"
+                }
+              },
+              {
+                "id": "actions",
+                "value": [
+                  {
+                    "type": "infinity",
+                    "title": "Delete",
+                    "confirmation": "Delete run ${__value.raw} and all its provider rows, results and job log? This cannot be undone. Only completed or failed runs can be deleted.",
+                    "style": {
+                      "backgroundColor": "#E02F44"
+                    },
+                    "infinity": {
+                      "url": "http://api:8000/reconciliation-runs/${__value.raw}",
+                      "method": "DELETE",
+                      "headers": [
+                        [
+                          "Prefer",
+                          "return=representation"
+                        ]
+                      ],
+                      "body": "",
+                      "queryParams": [],
+                      "datasourceUid": "reconciliation-api"
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.width",
+                "value": 110
+              },
+              {
+                "id": "custom.filterable",
+                "value": false
+              }
+            ]
           }
         ]
       },
@@ -205,6 +253,11 @@
               "selector": "finished_at",
               "text": "Finished",
               "type": "timestamp"
+            },
+            {
+              "selector": "run_id",
+              "text": "Action",
+              "type": "string"
             }
           ],
           "datasource": {

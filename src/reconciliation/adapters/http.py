@@ -8,7 +8,7 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile, status
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
 from reconciliation.application.ports import (
@@ -100,10 +100,22 @@ def _query(operation, **parameters):
         raise HTTPException(422, str(error)) from error
 
 
-@router.delete('/{run_id}', status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    '/{run_id}', status_code=status.HTTP_204_NO_CONTENT,
+    responses={200: {'description': 'Deletion confirmation when Prefer: return=representation is requested'}},
+)
 def delete_reconciliation_run(request: Request, run_id: UUID) -> Response:
     deleter: ReconRunDeleter = request.app.state.delete_reconciliation_run
     _query(deleter, run_id=run_id)
+    preferences = {
+        value.strip().lower()
+        for value in request.headers.get('prefer', '').split(',')
+    }
+    if 'return=representation' in preferences:
+        return JSONResponse(
+            content={'run_id': str(run_id), 'deleted': True},
+            headers={'Preference-Applied': 'return=representation'},
+        )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

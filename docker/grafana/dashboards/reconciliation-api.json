@@ -274,7 +274,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "Matched"
+              "options": "Matched (system+provider)"
             },
             "properties": [
               {
@@ -289,7 +289,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "Fuzzy matched"
+              "options": "Fuzzy matched (system+provider)"
             },
             "properties": [
               {
@@ -334,7 +334,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "Duplicate"
+              "options": "Duplicate (provider)"
             },
             "properties": [
               {
@@ -349,7 +349,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "Not reconcilable"
+              "options": "Not reconcilable (system)"
             },
             "properties": [
               {
@@ -393,47 +393,47 @@
           "columns": [
             {
               "selector": "summary.MATCHED",
-              "text": "Matched",
+              "text": "Matched (system+provider)",
               "type": "number"
             },
             {
               "selector": "summary.FUZZY_MATCHED",
-              "text": "Fuzzy matched",
+              "text": "Fuzzy matched (system+provider)",
               "type": "number"
             },
             {
               "selector": "summary.AMOUNT_MISMATCH",
-              "text": "Amount mismatch",
+              "text": "Amount mismatch (system+provider)",
               "type": "number"
             },
             {
               "selector": "summary.CURRENCY_MISMATCH",
-              "text": "Currency mismatch",
+              "text": "Currency mismatch (system+provider)",
               "type": "number"
             },
             {
               "selector": "summary.MISSING_IN_SYSTEM",
-              "text": "Missing in system",
+              "text": "Missing in system (provider)",
               "type": "number"
             },
             {
               "selector": "summary.MISSING_IN_PROVIDER",
-              "text": "Missing in provider",
+              "text": "Missing in provider (system)",
               "type": "number"
             },
             {
               "selector": "summary.DUPLICATE",
-              "text": "Duplicate",
+              "text": "Duplicate (provider)",
               "type": "number"
             },
             {
               "selector": "summary.NOT_RECONCILABLE",
-              "text": "Not reconcilable",
+              "text": "Not reconcilable (system)",
               "type": "number"
             },
             {
               "selector": "summary.INVALID_DATA",
-              "text": "Invalid data",
+              "text": "Invalid data (system)",
               "type": "number"
             }
           ],

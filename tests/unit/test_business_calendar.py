@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import UTC, date, datetime, time
 
 import pytest
@@ -62,3 +63,15 @@ def test_previous_period_row_is_excluded_without_being_marked_late() -> None:
     )
     assert eligible == []
     assert persisted[0].late_arriving is False
+
+
+def test_classification_resets_stale_late_flag_without_mutating_input() -> None:
+    period = resolve_business_period(date(2026, 10, 2), "UTC", time(2))
+    row = replace(
+        _row(datetime(2026, 10, 2, 1, tzinfo=UTC)), late_arriving=True,
+    )
+
+    eligible, persisted = classify_provider_rows(iter([row]), period)
+
+    assert eligible == persisted == [replace(row, late_arriving=False)]
+    assert row.late_arriving is True

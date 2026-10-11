@@ -1,7 +1,7 @@
 """Financial summary rebuilt from persisted reconciliation results."""
 
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Iterable
 
@@ -77,39 +77,12 @@ class FinancialSummary:
     refunds_by_currency: tuple[RefundCurrencyTotals, ...]
 
 
-def build_financial_summary(results: Iterable[ReconResult]) -> FinancialSummary:
-    all_rows = tuple(results)
-    rows = tuple(row for row in all_rows if row.result_type not in {
-        ReconResultType.DUPLICATE, ReconResultType.NOT_RECONCILABLE,
-    })
-    totals, unallocated = _currency_totals(rows)
-    parents = tuple(row for row in rows if row.system_txn_id and row.txn_type in {
-        TxnType.PAYMENT, TxnType.LOAD,
-    })
-    refunded = sum(_is_refunded(parent) for parent in parents)
-    missing = sum(
-        parent.system_status in {None, CanonicalStatus.UNKNOWN}
-        and not _is_refunded(parent)
-        for parent in parents
-    )
-    rate = (
-        format(Decimal(refunded) / Decimal(len(parents)), ".6f")
-        if parents and not missing else None
-    )
-    return FinancialSummary(
-        totals, unallocated,
-        RefundParentMetrics(len(parents), refunded, missing, rate),
-        _refund_cross_checks(rows, parents),
-        _breakdowns(all_rows), _refund_totals(rows),
-    )
+class _CurrencyAccumulator:
+    def __init__(self) -> None:
+        self.amounts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+        self.unallocated = 0
 
-
-def _currency_totals(
-    rows: tuple[ReconResult, ...],
-) -> tuple[tuple[CurrencyTotals, ...], int]:
-    amounts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
-    unallocated = 0
-    for row in rows:
+    def add(self, row: ReconResult) -> None:
         for side, present in (
             ("system", row.system_txn_id is not None),
             ("provider", row.source_row_number is not None),
@@ -119,9 +92,9 @@ def _currency_totals(
             if not present and amount is None and currency is None:
                 continue
             if not currency:
-                unallocated += 1
+                self.unallocated += 1
                 continue
-            bucket = amounts[currency]
+            bucket = self.amounts[currency]
             if amount is None or (
                 side == "system" and row.result_type is ReconResultType.INVALID_DATA
             ):
@@ -130,67 +103,64 @@ def _currency_totals(
                 bucket[side] += int(amount)
                 bucket[f"{side}_count"] += 1
 
-    totals = tuple(
-        CurrencyTotals(
-            currency=currency,
-            system_amount_minor=bucket["system"] if bucket["system_count"] else None,
-            provider_amount_minor=bucket["provider"] if bucket["provider_count"] else None,
-            # An absent counterpart contributes an empty sum. An unknown amount
-            # or currency makes the full-run difference unavailable.
-            delta_amount_minor=(
-                bucket["system"] - bucket["provider"]
-                if not (bucket["system_missing"] or bucket["provider_missing"] or unallocated)
-                else None
-            ),
-            system_amount_count=bucket["system_count"],
-            provider_amount_count=bucket["provider_count"],
-            system_missing_amount_count=bucket["system_missing"],
-            provider_missing_amount_count=bucket["provider_missing"],
+    def finish(self) -> tuple[tuple[CurrencyTotals, ...], int]:
+        totals = tuple(
+            CurrencyTotals(
+                currency=currency,
+                system_amount_minor=bucket["system"] if bucket["system_count"] else None,
+                provider_amount_minor=bucket["provider"] if bucket["provider_count"] else None,
+                delta_amount_minor=(
+                    bucket["system"] - bucket["provider"]
+                    if not (bucket["system_missing"] or bucket["provider_missing"] or self.unallocated)
+                    else None
+                ),
+                system_amount_count=bucket["system_count"],
+                provider_amount_count=bucket["provider_count"],
+                system_missing_amount_count=bucket["system_missing"],
+                provider_missing_amount_count=bucket["provider_missing"],
+            )
+            for currency, bucket in sorted(self.amounts.items())
         )
-        for currency, bucket in sorted(amounts.items())
-    )
-    return totals, unallocated
+        return totals, self.unallocated
 
 
-def _breakdowns(rows: tuple[ReconResult, ...]) -> tuple[SummaryBreakdown, ...]:
-    groups: dict[tuple, list[ReconResult]] = defaultdict(list)
-    for row in rows:
-        groups[(row.region.value, row.tenant_id, row.provider,
-                row.txn_type.value if row.txn_type else None,
-                row.result_type.value)].append(row)
-    output = []
-    for key, group in sorted(groups.items(), key=lambda item: str(item[0])):
-        financial_rows = tuple(row for row in group if row.result_type not in {
-            ReconResultType.DUPLICATE, ReconResultType.NOT_RECONCILABLE,
-        })
-        totals, unallocated = _currency_totals(financial_rows)
-        output.append(SummaryBreakdown(
-            *key,
-            system_count=sum(row.system_txn_id is not None for row in group),
-            provider_count=sum(row.source_row_number is not None for row in group),
-            totals_by_currency=totals,
-            unallocated_currency_count=unallocated,
-        ))
-    return tuple(output)
+@dataclass(slots=True)
+class _BreakdownAccumulator:
+    system_count: int = 0
+    provider_count: int = 0
+    currencies: _CurrencyAccumulator = field(default_factory=_CurrencyAccumulator)
 
 
-def _refund_totals(rows: tuple[ReconResult, ...]) -> tuple[RefundCurrencyTotals, ...]:
-    groups: dict[str | None, list[ReconResult]] = defaultdict(list)
-    for row in rows:
-        if (row.system_txn_id is not None and row.txn_type is TxnType.REFUND
-                and row.system_status in SUCCESSFUL_REFUND_STATUSES):
-            groups[row.system_currency].append(row)
-    output = []
-    for currency, children in sorted(groups.items(), key=lambda item: str(item[0])):
-        valid = [row for row in children if row.system_amount_minor is not None
-                 and row.result_type is not ReconResultType.INVALID_DATA]
-        output.append(RefundCurrencyTotals(
-            currency, len(children),
-            sum(int(row.system_amount_minor) for row in valid)
-            if valid and currency else None,
-            len(children) - len(valid),
-        ))
-    return tuple(output)
+@dataclass(slots=True)
+class _RefundAccumulator:
+    count: int = 0
+    valid_count: int = 0
+    amount: int = 0
+
+    def add(self, row: ReconResult) -> None:
+        self.count += 1
+        if row.system_amount_minor is not None and row.result_type is not ReconResultType.INVALID_DATA:
+            self.valid_count += 1
+            self.amount += int(row.system_amount_minor)
+
+
+@dataclass(slots=True)
+class _RefundChildren:
+    count: int = 0
+    successful_count: int = 0
+    amount: int = 0
+    incomplete: bool = False
+
+    def add(self, row: ReconResult) -> None:
+        self.count += 1
+        if row.system_status in {None, CanonicalStatus.UNKNOWN}:
+            self.incomplete = True
+        if row.system_status in SUCCESSFUL_REFUND_STATUSES:
+            self.successful_count += 1
+            if row.system_amount_minor is None or row.result_type is ReconResultType.INVALID_DATA:
+                self.incomplete = True
+            else:
+                self.amount += int(row.system_amount_minor)
 
 
 def _is_refunded(parent: ReconResult) -> bool:
@@ -199,46 +169,98 @@ def _is_refunded(parent: ReconResult) -> bool:
     )
 
 
-def _refund_cross_checks(
-    rows: tuple[ReconResult, ...], parents: tuple[ReconResult, ...],
-) -> tuple[RefundCrossCheck, ...]:
-    parent_index: dict[tuple, list[ReconResult]] = defaultdict(list)
-    groups: dict[tuple, list[ReconResult]] = defaultdict(list)
-    for parent in parents:
-        if parent.region not in {Region.VN, Region.INDIA}:
+def _parent_key(parent: ReconResult) -> tuple:
+    reference = (
+        parent.system_txn_id if parent.region is Region.VN
+        else parent.system_provider_txn_id
+    )
+    return parent.region, parent.tenant_id, parent.provider, reference
+
+
+def build_financial_summary(results: Iterable[ReconResult]) -> FinancialSummary:
+    """Consume results once; retain counters and only refund lookup evidence."""
+    currencies = _CurrencyAccumulator()
+    breakdowns: dict[tuple, _BreakdownAccumulator] = defaultdict(_BreakdownAccumulator)
+    refunds: dict[str | None, _RefundAccumulator] = defaultdict(_RefundAccumulator)
+    children: dict[tuple, _RefundChildren] = defaultdict(_RefundChildren)
+    # Parent references are needed for out-of-order refund children and ambiguity.
+    # No full-run tuple or per-breakdown/per-child lists are materialized.
+    parents: list[ReconResult] = []
+    parent_count = refunded = missing = 0
+    for row in results:
+        key = (row.region.value, row.tenant_id, row.provider,
+               row.txn_type.value if row.txn_type else None, row.result_type.value)
+        group = breakdowns[key]
+        group.system_count += row.system_txn_id is not None
+        group.provider_count += row.source_row_number is not None
+        if row.result_type in {ReconResultType.DUPLICATE, ReconResultType.NOT_RECONCILABLE}:
             continue
-        reference = (
-            parent.system_txn_id if parent.region is Region.VN
-            else parent.system_provider_txn_id
+        currencies.add(row)
+        group.currencies.add(row)
+        if row.system_txn_id and row.txn_type in {TxnType.PAYMENT, TxnType.LOAD}:
+            parent_count += 1
+            is_refunded = _is_refunded(row)
+            refunded += is_refunded
+            missing += row.system_status in {None, CanonicalStatus.UNKNOWN} and not is_refunded
+            if row.region in {Region.VN, Region.INDIA}:
+                parents.append(row)
+        if row.system_txn_id is not None and row.txn_type is TxnType.REFUND:
+            if row.system_status in SUCCESSFUL_REFUND_STATUSES:
+                refunds[row.system_currency].add(row)
+            if row.system_txn_id and row.region in {Region.VN, Region.INDIA}:
+                children[(row.region, row.tenant_id, row.provider,
+                          row.refund_of, row.system_currency)].add(row)
+
+    totals, unallocated = currencies.finish()
+    rate = (
+        format(Decimal(refunded) / Decimal(parent_count), ".6f")
+        if parent_count and not missing else None
+    )
+    output_breakdowns = []
+    for key, group in sorted(breakdowns.items(), key=lambda item: str(item[0])):
+        group_totals, group_unallocated = group.currencies.finish()
+        output_breakdowns.append(SummaryBreakdown(
+            *key, group.system_count, group.provider_count, group_totals, group_unallocated,
+        ))
+    refund_totals = tuple(
+        RefundCurrencyTotals(
+            currency, group.count,
+            group.amount if group.valid_count and currency else None,
+            group.count - group.valid_count,
         )
-        if reference:
-            key = (parent.region, parent.tenant_id, parent.provider, reference)
-            parent_index[key].append(parent)
-            if _is_refunded(parent):
-                groups[(*key, parent.system_currency)]  # Report absent children too.
-    for row in rows:
-        if row.system_txn_id and row.txn_type is TxnType.REFUND and row.region in {
-            Region.VN, Region.INDIA,
-        }:
-            groups[(row.region, row.tenant_id, row.provider,
-                    row.refund_of, row.system_currency)].append(row)
+        for currency, group in sorted(refunds.items(), key=lambda item: str(item[0]))
+    )
+    return FinancialSummary(
+        totals, unallocated,
+        RefundParentMetrics(parent_count, refunded, missing, rate),
+        _refund_cross_checks(children, parents), tuple(output_breakdowns), refund_totals,
+    )
+
+
+def _refund_cross_checks(
+    groups: dict[tuple, _RefundChildren], parents: list[ReconResult],
+) -> tuple[RefundCrossCheck, ...]:
+    # First establish all references requiring a check, including parents without
+    # children. Only index parents for those references, preserving ambiguity.
+    for parent in parents:
+        key = _parent_key(parent)
+        if key[3] and _is_refunded(parent):
+            groups[(*key, parent.system_currency)]
+    required = {key[:4] for key in groups if key[3]}
+    parent_index: dict[tuple, tuple[int, ReconResult]] = {}
+    for parent in parents:
+        key = _parent_key(parent)
+        if key in required:
+            count, _ = parent_index.get(key, (0, parent))
+            parent_index[key] = count + 1, parent
 
     checks = []
     for key, children in sorted(groups.items(), key=lambda item: str(item[0])):
         region, tenant, provider, reference, currency = key
-        candidates = parent_index[key[:4]] if reference else []
-        parent = candidates[0] if len(candidates) == 1 else None
-        successful = [row for row in children if row.system_status in SUCCESSFUL_REFUND_STATUSES]
-        incomplete = any(
-            row.system_status in {None, CanonicalStatus.UNKNOWN}
-            or (row.system_status in SUCCESSFUL_REFUND_STATUSES and (
-                row.system_amount_minor is None or row.result_type is ReconResultType.INVALID_DATA
-            ))
-            for row in children
-        )
+        candidate_count, candidate = parent_index.get(key[:4], (0, None))
+        parent = candidate if candidate_count == 1 else None
         child_amount = (
-            sum(int(row.system_amount_minor) for row in successful)
-            if children and not incomplete and currency else None
+            children.amount if children.count and not children.incomplete and currency else None
         )
         parent_amount = (
             int(parent.refunded_amount_minor)
@@ -246,7 +268,7 @@ def _refund_cross_checks(
         )
         if not reference:
             status = "MISSING_PARENT_REFERENCE"
-        elif len(candidates) > 1:
+        elif candidate_count > 1:
             status = "AMBIGUOUS_PARENT"
         elif parent is None:
             status = "PARENT_NOT_IN_SNAPSHOT"
@@ -254,9 +276,9 @@ def _refund_cross_checks(
             status = "MISSING_CURRENCY"
         elif parent.system_currency != currency:
             status = "CURRENCY_MISMATCH"
-        elif not children:
+        elif not children.count:
             status = "CHILDREN_NOT_IN_SNAPSHOT"
-        elif incomplete:
+        elif children.incomplete:
             status = "INCOMPLETE_CHILD_DATA"
         elif region is Region.VN:
             status = "LINKED"
@@ -266,6 +288,6 @@ def _refund_cross_checks(
             status = "MATCHED" if child_amount == parent_amount else "AMOUNT_MISMATCH"
         checks.append(RefundCrossCheck(
             region.value, tenant, provider, reference, currency,
-            len(successful), child_amount, parent_amount, status,
+            children.successful_count, child_amount, parent_amount, status,
         ))
     return tuple(checks)

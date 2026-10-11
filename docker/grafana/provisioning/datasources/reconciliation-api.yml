@@ -11,6 +11,7 @@ datasources:
       allowedHosts:
         - http://api:8000
       auth_method: none
+      allowDangerousHTTPMethods: true
       customHealthCheckEnabled: true
       customHealthCheckUrl: http://api:8000/health
       timeoutInSeconds: 30

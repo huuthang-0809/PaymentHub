@@ -87,7 +87,6 @@ services:
         condition: service_completed_successfully
 
   reconciliation-scheduler:
-    profiles: ["scheduler"]
     user: "${SCHEDULER_UID:-10001}:${SCHEDULER_GID:-10001}"
     build:
       context: .
@@ -115,7 +114,6 @@ services:
         condition: service_healthy
 
   reverse-proxy:
-    profiles: ["scheduler"]
     image: nginx:stable-alpine
     ports:
       - "${PROXY_PORT:-8080}:80"

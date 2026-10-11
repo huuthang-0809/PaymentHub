@@ -15,7 +15,7 @@ mkdir -p "$RECON_STATEMENT_DIR"
 
 # Cho scheduler quyền ghi vào bind mount trên Linux.
 export SCHEDULER_UID=$(id -u) SCHEDULER_GID=$(id -g)
-docker compose --profile scheduler up -d --build
+docker compose up -d --build
 ```
 
 Mở Grafana qua `http://localhost:8080`. Có thể đổi cổng bằng `PROXY_PORT`.
@@ -23,7 +23,8 @@ Dashboard **Generation & Simulation** tại `/d/paymenthub-scheduler-jobs` có n
 submit và bảng trạng thái cho cả hai loại job; xem `docs/grafana-dashboards.md`.
 Khi dùng domain hoặc cổng khác, đặt `GRAFANA_ROOT_URL` thành URL truy cập bên ngoài.
 `RECON_SCHEDULES_JSON` trong `.env` phải chứa các lịch đối soát cần chạy.
-Scheduler chờ request, không tự chạy simulation khi khởi động.
+Scheduler và reverse proxy khởi động mặc định, cung cấp sẵn cả hai API.
+Scheduler chờ request, không tự generate dữ liệu hoặc chạy simulation khi khởi động.
 
 ### 1. Generate data
 

@@ -172,6 +172,18 @@ def test_refunded_parent_without_children_and_ambiguous_parent_are_visible():
     assert checks[0].status == "AMBIGUOUS_PARENT"
 
 
+def test_one_shot_summary_keeps_out_of_order_refunds_and_parent_ambiguity():
+    rows = [
+        refund(),
+        payment(system_status=Status.SUCCESS, refunded_amount_minor=0),
+        payment(system_txn_id="another-parent"),
+    ]
+    summary = build_financial_summary(iter(rows))
+    assert summary == build_financial_summary(reversed(rows))
+    assert summary.refund_cross_checks[0].status == "AMBIGUOUS_PARENT"
+    assert summary.refund_cross_checks[0].successful_child_amount_minor == 30
+
+
 def test_breakdowns_count_each_side_and_keep_currency_totals_separate():
     rows = [
         payment(), refund(),
