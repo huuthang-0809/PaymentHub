@@ -42,6 +42,9 @@ services:
       MONGO_URI: mongodb://mongodb:27017
       GENERATOR_SEED: ${GENERATOR_SEED:-20260923}
       RECORDS_PER_REGION: ${RECORDS_PER_REGION:-5000}
+      GENERATOR_PROFILE: ${GENERATOR_PROFILE:-baseline}
+      GENERATOR_TIME_SPAN_HOURS: ${GENERATOR_TIME_SPAN_HOURS:-24}
+      GENERATOR_END_AT: ${GENERATOR_END_AT:-}
       GROUND_TRUTH_PATH: /test-data/ground_truth.json
       PROVIDER_STATEMENTS_DIR: /test-data/provider-statements
     depends_on:
@@ -61,6 +64,49 @@ services:
       postgres:
         condition: service_healthy
 
+  monitoring-batch:
+    profiles: ["monitoring"]
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    command: ["python", "-m", "bootstrap.monitoring_batch"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://paymenthub:${POSTGRES_PASSWORD:-paymenthub}@postgres:5432/paymenthub
+      MONGO_URI: mongodb://mongodb:27017
+      GENERATOR_SEED: ${GENERATOR_SEED:-20260923}
+      RECORDS_PER_REGION: ${RECORDS_PER_REGION:-5000}
+      MONITORING_WINDOW_SIZES: ${MONITORING_WINDOW_SIZES:-1,5,15}
+      MONITORING_ALLOWED_LATENESS_MINUTES: ${MONITORING_ALLOWED_LATENESS_MINUTES:-5}
+      MONITORING_RETENTION_HOURS: ${MONITORING_RETENTION_HOURS:-24}
+      MONITORING_REPLAYS: ${MONITORING_REPLAYS:-1}
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      generator:
+        condition: service_completed_successfully
+      migrate:
+        condition: service_completed_successfully
+
+  health-evaluation:
+    profiles: ["monitoring"]
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    command: ["python", "-m", "bootstrap.health_evaluation"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://paymenthub:${POSTGRES_PASSWORD:-paymenthub}@postgres:5432/paymenthub
+      HEALTH_RULES_FILE: /app/config/health-rules.demo.json
+      HEALTH_SCOPES: ${HEALTH_SCOPES:-}
+      MONITORING_QUERY_TIMEOUT: ${MONITORING_QUERY_TIMEOUT:-5}
+      MONITORING_WRITE_TIMEOUT: ${MONITORING_WRITE_TIMEOUT:-5}
+    volumes:
+      - ./config:/app/config:ro
+    depends_on:
+      monitoring-batch:
+        condition: service_completed_successfully
+      migrate:
+        condition: service_completed_successfully
+
   api:
     build:
       context: .
@@ -73,6 +119,7 @@ services:
       MONGO_URI: mongodb://mongodb:27017
       RECON_WORKER_COUNT: ${RECON_WORKER_COUNT:-1}
       RECON_SCHEDULES_JSON: ${RECON_SCHEDULES_JSON:-[]}
+      MONITORING_QUERY_TIMEOUT: ${MONITORING_QUERY_TIMEOUT:-5}
     ports:
       - "8000:8000"
     healthcheck:
@@ -85,6 +132,58 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+
+  rabbitmq:
+    profiles: ["monitoring", "tools"]
+    image: rabbitmq:4-management
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-paymenthub}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-paymenthub}
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+      - "15692:15692"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+      - ./docker/config/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./docker/config/rabbitmq-enabled-plugins:/etc/rabbitmq/enabled_plugins:ro
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  rabbitmq-consumer:
+    profiles: ["monitoring"]
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    command: ["python", "-m", "bootstrap.rabbitmq_consumer"]
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+psycopg://paymenthub:${POSTGRES_PASSWORD:-paymenthub}@postgres:5432/paymenthub
+      RABBITMQ_URL: amqp://paymenthub:paymenthub@rabbitmq:5672/
+      RABBITMQ_PREFETCH_COUNT: ${RABBITMQ_PREFETCH_COUNT:-100}
+      MONITORING_WINDOW_SIZES: ${MONITORING_WINDOW_SIZES:-1,5,15}
+      MONITORING_ALLOWED_LATENESS_MINUTES: ${MONITORING_ALLOWED_LATENESS_MINUTES:-5}
+      MONITORING_RETENTION_HOURS: ${MONITORING_RETENTION_HOURS:-24}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+
+  rabbitmq-dlq-reprocess:
+    profiles: ["tools"]
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    command: ["python", "-m", "bootstrap.rabbitmq_dlq_reprocess"]
+    environment:
+      RABBITMQ_URL: amqp://paymenthub:paymenthub@rabbitmq:5672/
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
 
   reconciliation-scheduler:
     profiles: ["scheduler"]
@@ -216,3 +315,4 @@ volumes:
   mongo_data:
   prometheus_data:
   grafana_data:
+  rabbitmq_data:
