@@ -1,6 +1,6 @@
 import os
 from collections.abc import Iterable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -84,9 +84,20 @@ def _write_document_iterator(
 
 
 def main() -> None:
+    end_at_raw = os.getenv("GENERATOR_END_AT")
+    end_at = None
+    if end_at_raw:
+        end_at = (
+            datetime.now(UTC) - timedelta(minutes=15)
+            if end_at_raw.strip().lower() == "now"
+            else datetime.fromisoformat(end_at_raw.replace("Z", "+00:00"))
+        )
     config = GeneratorConfig(
         seed=int(os.getenv("GENERATOR_SEED", "20260923")),
         records_per_region=int(os.getenv("RECORDS_PER_REGION", "5000")),
+        profile=os.getenv("GENERATOR_PROFILE", "baseline"),
+        time_span_hours=int(os.getenv("GENERATOR_TIME_SPAN_HOURS", "24")),
+        end_at=end_at,
     )
     mongo_uri = os.getenv("MONGO_URI", "mongodb://mongodb:27017")
     output_path = Path(os.getenv("GROUND_TRUTH_PATH", "/output/ground_truth.json"))
@@ -105,6 +116,8 @@ def main() -> None:
                 "_id": config.batch_id,
                 "seed": config.seed,
                 "records_per_region": config.records_per_region,
+                "profile": config.profile,
+                "time_span_hours": config.time_span_hours,
                 "status": "COMPLETED",
                 "finished_at": datetime.now(UTC),
                 "expected_documents": {

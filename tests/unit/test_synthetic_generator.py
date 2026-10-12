@@ -1,7 +1,7 @@
 import json
 from collections import Counter
 from dataclasses import asdict
-from datetime import date, time
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 
 import pytest
@@ -34,6 +34,48 @@ def test_generator_is_deterministic() -> None:
     first = generate_dataset(config)
     second = generate_dataset(config)
     assert first == second
+
+
+def test_monitoring_rich_profile_spreads_time_values_and_statuses() -> None:
+    end_at = datetime(2026, 10, 6, 8, tzinfo=UTC)
+    config = GeneratorConfig(
+        seed=20261006,
+        records_per_region=1000,
+        profile="monitoring-rich",
+        time_span_hours=12,
+        end_at=end_at,
+    )
+    datasets, ground_truth = generate_dataset(config)
+
+    vn = datasets[DATABASE_VN]
+    assert vn[0]["CreatedOn"] == end_at - timedelta(hours=12)
+    assert vn[-1]["CreatedOn"] == end_at
+    assert len({row["Amount"] for row in vn}) > 100
+    assert {row["Status"] for row in vn} >= {0, 1, 2, 5}
+    assert set(ground_truth["canonical"]["VN"]["by_status"]) >= {
+        "FAILED",
+        "PENDING",
+        "SUCCESS",
+        "UNKNOWN",
+    }
+
+    asia = datasets[DATABASE_ASIA_ID] + datasets[DATABASE_ASIA_PH]
+    assert len({row["Channel"] for row in asia}) == 4
+    assert datasets[DATABASE_ASIA_ID][0]["CreatedAt"] == end_at - timedelta(hours=12)
+    assert datasets[DATABASE_ASIA_ID][-1]["CreatedAt"] == end_at
+    assert datasets[DATABASE_ASIA_PH][0]["CreatedAt"] == end_at - timedelta(hours=12)
+    assert datasets[DATABASE_ASIA_PH][-1]["CreatedAt"] == end_at
+    india = datasets[DATABASE_INDIA]
+    assert len({row["instrumentType"] for row in india}) == 4
+
+    for region in ("VN", "ASIA", "INDIA"):
+        statuses = ground_truth["canonical"][region]["by_status"]
+        total = sum(statuses.values())
+        healthy = statuses.get("SUCCESS", 0) + statuses.get("REFUNDED", 0)
+        assert healthy / total > 0.80
+        assert statuses.get("FAILED", 0) / total < 0.10
+        assert statuses.get("PENDING", 0) / total < 0.10
+        assert statuses.get("UNKNOWN", 0) / total < 0.20
 
 
 def test_generator_creates_three_regions_and_two_asia_tenants() -> None:
