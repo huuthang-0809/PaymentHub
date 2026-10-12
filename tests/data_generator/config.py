@@ -60,10 +60,19 @@ ASIA_MAPPING = AsiaMapping(
 class GeneratorConfig:
     seed: int = 20260923
     records_per_region: int = 5_000
+    profile: str = "baseline"
+    time_span_hours: int = 24
+    end_at: datetime | None = None
 
     def __post_init__(self) -> None:
         if self.records_per_region <= 0:
             raise ValueError("records_per_region must be positive")
+        if self.profile not in {"baseline", "monitoring-rich"}:
+            raise ValueError("profile must be baseline or monitoring-rich")
+        if not 1 <= self.time_span_hours <= 24 * 31:
+            raise ValueError("time_span_hours must be between 1 and 744")
+        if self.end_at is not None and self.end_at.tzinfo is None:
+            raise ValueError("end_at must be timezone-aware")
         try:
             datetime.strptime(str(self.seed), "%Y%m%d")
         except ValueError as exc:
@@ -72,6 +81,11 @@ class GeneratorConfig:
     @property
     def batch_id(self) -> str:
         return f"seed-{self.seed}"
+
+    @property
+    def base_time(self) -> datetime:
+        parsed = datetime.strptime(str(self.seed), "%Y%m%d")
+        return parsed.replace(tzinfo=UTC)
 
 @dataclass(frozen=True, slots=True)
 class ScopeSpec:
@@ -203,6 +217,49 @@ def base_case(config: GeneratorConfig, scope: ScopeSpec, index: int) -> BaseCase
         microseconds=index * period_microseconds // count
     )
 
+    amount_minor = 100_000 + index
+    if config.profile == "monitoring-rich":
+        amount_minor = 10_000 + (index * 7_919) % 2_000_000
+        end_at = config.end_at or config.base_time + timedelta(days=1)
+        span = timedelta(hours=config.time_span_hours)
+        scope_records = config.records_per_region
+        if scope.region is Region.ASIA:
+            scope_records = (
+                (config.records_per_region + 1) // 2
+                if scope.tenant_id == "asia-id"
+                else config.records_per_region // 2
+            )
+        fraction = index / max(1, scope_records - 1)
+        if config.time_span_hours == 24:
+            base_weights = (
+                0.30, 0.24, 0.20, 0.18, 0.22, 0.35,
+                0.70, 1.20, 1.55, 1.25, 1.05, 1.35,
+                1.60, 1.25, 1.00, 0.95, 1.10, 1.35,
+                1.70, 1.85, 1.65, 1.25, 0.80, 0.48,
+            )
+            provider_offset = {"ONEPAY": 11, "ESPAY": 29, "2C2P": 47, "RAZORPAY": 71}[scope.provider]
+            weights = tuple(
+                weight
+                * (
+                    0.85
+                    + ((config.seed + hour * 17 + provider_offset * 13) % 31)
+                    / 100
+                )
+                for hour, weight in enumerate(base_weights)
+            )
+            target = fraction * sum(weights)
+            elapsed_weight = 0.0
+            elapsed_hours = 0.0
+            for weight in weights:
+                if target <= elapsed_weight + weight:
+                    elapsed_hours += (target - elapsed_weight) / weight
+                    break
+                elapsed_weight += weight
+                elapsed_hours += 1
+            transaction_time = end_at - span + timedelta(hours=elapsed_hours)
+        else:
+            transaction_time = end_at - span + span * fraction
+
     return BaseCase(
         scope=scope,
         index=index,
@@ -217,7 +274,7 @@ def base_case(config: GeneratorConfig, scope: ScopeSpec, index: int) -> BaseCase
         ),
         merchant_ref=None if scope.region is Region.INDIA else system_txn_id,
         merchant_id=f"{scope.slug}-merchant-{config.seed}-{index:06d}",
-        amount_minor=100_000 + index,
+        amount_minor=amount_minor,
         txn_type=txn_type,
         transaction_time=transaction_time,
     )
