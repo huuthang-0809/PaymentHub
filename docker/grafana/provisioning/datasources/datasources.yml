@@ -1,0 +1,28 @@
+apiVersion: 1
+
+datasources:
+  - name: PaymentHub PostgreSQL
+    uid: paymenthub-postgres
+    type: postgres
+    access: proxy
+    url: postgres:5432
+    user: paymenthub
+    secureJsonData:
+      password: ${POSTGRES_PASSWORD}
+    jsonData:
+      database: paymenthub
+      sslmode: disable
+      postgresVersion: 1500
+      timescaledb: false
+    isDefault: true
+    editable: false
+
+  - name: PaymentHub Prometheus
+    uid: paymenthub-prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    jsonData:
+      httpMethod: POST
+      timeInterval: 15s
+    editable: false
