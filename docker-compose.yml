@@ -99,7 +99,7 @@ services:
       RECON_SCHEDULER_METRICS_PORT: 9101
       RECON_SCHEDULES_JSON: ${RECON_SCHEDULES_JSON:-[]}
       RECON_API_TIMEOUT_SECONDS: ${RECON_API_TIMEOUT_SECONDS:-30}
-      RECON_STATUS_POLL_SECONDS: ${RECON_STATUS_POLL_SECONDS:-60}
+      RECON_STATUS_POLL_SECONDS: ${RECON_STATUS_POLL_SECONDS:-15}
       RECON_STATUS_TIMEOUT_SECONDS: ${RECON_STATUS_TIMEOUT_SECONDS:-3600}
       RECON_WORKER_COUNT: ${RECON_WORKER_COUNT:-1}
       RECON_SIMULATION_START_DATE: ${SIMULATION_START_DATE:-}
@@ -143,20 +143,6 @@ services:
     volumes:
       - ./tests/generated:/test-data
 
-  verify-data: # verify data insert into MongoDB with groundtruth.
-    profiles: ["seed"]
-    build:
-      context: .
-      dockerfile: docker/test-data-generator.Dockerfile
-    command: ["python", "-m", "tests.data_generator.verify_ground_truth"]
-    environment:
-      MONGO_URI: mongodb://mongodb:27017
-      GROUND_TRUTH_PATH: /test-data/ground_truth.json
-    depends_on:
-      generator:
-        condition: service_completed_successfully
-    volumes:
-      - ./tests/generated:/test-data:ro
   prometheus:
     image: prom/prometheus:v3.15.0
     container_name: paymenthub_prometheus
@@ -185,7 +171,9 @@ services:
       - ./docker/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
 
   grafana:
-    image: grafana/grafana:13.1.6
+    build:
+      context: ./docker/grafana/plugins/paymenthub-evidence-panel
+    image: paymenthub-grafana:13.1.6
     container_name: paymenthub_grafana
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
@@ -195,8 +183,11 @@ services:
       # Allow dashboard actions to use the Infinity datasource.
       GF_FEATURE_TOGGLES_ENABLE: vizActionsAuth
       GF_PLUGINS_PREINSTALL_SYNC: yesoreyeram-infinity-datasource
-      # The API uses cursor pagination with at most 200 rows per request. This
-      # lets the detail table follow up to 50 cursors (10,000 rows) per query.
+      GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: paymenthub-evidence-panel
+      # Unused datasource backends; keep Infinity for the API dashboards.
+      GF_PLUGINS_DISABLE_PLUGINS: "elasticsearch,zipkin"
+      # The Operations run list still follows up to 50 pages. Transaction
+      # evidence uses the custom panel and loads one page per navigation.
       GF_PLUGIN_PAGINATION_MAX_PAGES: ${GRAFANA_API_MAX_PAGES:-50}
     ports:
       - "3000:3000"

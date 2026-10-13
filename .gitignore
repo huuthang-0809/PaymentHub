@@ -226,3 +226,8 @@ __marimo__/
 .aider-desk/
 .agents/
 skills-lock.json
+
+# Grafana panel build and browser checks
+node_modules/
+test-results/
+playwright-report/

@@ -55,7 +55,7 @@ class PostgreReconQuery:
             return cursor.fetchall()
 
     def snapshot(
-        self, run_id, *, include_results=True,
+        self, run_id, *, include_results=True, include_refund_checks=True,
     ) -> tuple[dict, StoredRun | None]:
         with self.connection.transaction():
             # One consistent view even if a failed run is concurrently retried.
@@ -76,11 +76,13 @@ class PostgreReconQuery:
                         cursor, run_id, metadata['job_run_id'],
                         metadata['business_date'],
                         include_results=include_results,
+                        include_refund_checks=include_refund_checks,
                     )
                     if not include_results and stored.financial_summary is None:
                         stored = PostgreReconRepository._load_completed(
                             cursor, run_id, metadata['job_run_id'],
                             metadata['business_date'], include_results=True,
+                            include_refund_checks=include_refund_checks,
                         )
             return metadata, stored
 
@@ -107,7 +109,37 @@ class PostgreReconQuery:
                      for key, value in row.items()}
                     for row in cursor.fetchall()
                 ]
-                return metadata, rows
+            return metadata, rows
+
+    def refund_checks_page(self, run_id, *, after=0, fetch_limit=51):
+        with self.connection.transaction():
+            self.connection.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+            with self.connection.cursor(row_factory=dict_row) as cursor:
+                cursor.execute('SELECT status, finished_at, business_date, job_run_id '
+                               'FROM recon_run WHERE run_id = %s', (run_id,))
+                metadata = cursor.fetchone()
+                if metadata is None:
+                    return None
+                if metadata['status'] != 'COMPLETED' or fetch_limit == 0:
+                    return metadata, []
+                # Slice inside PostgreSQL: the API never receives the full array.
+                # Stable ordinals are cursor keys for this immutable completed run.
+                path = f'$.financial_summary.refund_cross_checks[{after} to {after + fetch_limit - 1}]'
+                cursor.execute('SELECT jsonb_path_query_array(metrics, %s::jsonpath) AS checks '
+                               'FROM job_run_log WHERE job_run_id = %s',
+                               (path, metadata['job_run_id']))
+                rows = cursor.fetchone()['checks']
+                if not rows:
+                    # Older runs may predate persisted financial summaries.
+                    cursor.execute("SELECT metrics ? 'financial_summary' AS has_summary FROM job_run_log "
+                                   'WHERE job_run_id = %s', (metadata['job_run_id'],))
+                    if not cursor.fetchone()['has_summary']:
+                        with self.connection.cursor() as legacy_cursor:
+                            stored = PostgreReconRepository._load_completed(
+                                legacy_cursor, run_id, metadata['job_run_id'], metadata['business_date'])
+                        rows = stored.financial_summary['refund_cross_checks'][after:after + fetch_limit]
+                return metadata, [dict(row, check_key=after + index + 1)
+                                  for index, row in enumerate(rows)]
 
 
 class PostgreReconRunDeleter:
@@ -149,11 +181,12 @@ class PooledReconQuery:
         except DatabaseError as error:
             raise QueryUnavailable('QUERY_UNAVAILABLE') from error
 
-    def snapshot(self, run_id, *, include_results=True):
+    def snapshot(self, run_id, *, include_results=True, include_refund_checks=True):
         try:
             with self.pool.connection() as connection:
                 return PostgreReconQuery(connection).snapshot(
                     run_id, include_results=include_results,
+                    include_refund_checks=include_refund_checks,
                 )
         except DatabaseError as error:
             raise QueryUnavailable('QUERY_UNAVAILABLE') from error
@@ -162,6 +195,13 @@ class PooledReconQuery:
         try:
             with self.pool.connection() as connection:
                 return PostgreReconQuery(connection).results_page(run_id, **parameters)
+        except DatabaseError as error:
+            raise QueryUnavailable('QUERY_UNAVAILABLE') from error
+
+    def refund_checks_page(self, run_id, **parameters):
+        try:
+            with self.pool.connection() as connection:
+                return PostgreReconQuery(connection).refund_checks_page(run_id, **parameters)
         except DatabaseError as error:
             raise QueryUnavailable('QUERY_UNAVAILABLE') from error
 

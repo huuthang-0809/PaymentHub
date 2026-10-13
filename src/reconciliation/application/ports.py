@@ -205,12 +205,16 @@ class ReconQuery(Protocol):
              status: str | None = None, after: UUID | None = None,
              fetch_limit: int | None = None) -> list[dict]: ...
 
-    def snapshot(self, run_id: UUID, *, include_results: bool = True
+    def snapshot(self, run_id: UUID, *, include_results: bool = True,
+                 include_refund_checks: bool = True
                  ) -> tuple[dict, StoredRun | None] | None: ...
 
     def results_page(self, run_id: UUID, *, result: str | None = None,
                      after: str | None = None, fetch_limit: int = 51
                      ) -> tuple[dict, list[dict]] | None: ...
+
+    def refund_checks_page(self, run_id: UUID, *, after: int = 0,
+                           fetch_limit: int = 51) -> tuple[dict, list[dict]] | None: ...
 
 
 class ReconRunDeleter(Protocol):

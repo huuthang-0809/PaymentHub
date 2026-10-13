@@ -142,7 +142,7 @@
           "root_selector": "run",
           "source": "url",
           "type": "json",
-          "url": "/reconciliation-runs/${run_id}/summary",
+          "url": "/reconciliation-runs/${run_id}/summary?include_refund_checks=false",
           "url_options": {
             "data": "",
             "method": "GET"
@@ -246,7 +246,7 @@
           "root_selector": "",
           "source": "url",
           "type": "json",
-          "url": "/reconciliation-runs/${run_id}/summary",
+          "url": "/reconciliation-runs/${run_id}/summary?include_refund_checks=false",
           "url_options": {
             "data": "",
             "method": "GET"
@@ -448,7 +448,7 @@
           "root_selector": "",
           "source": "url",
           "type": "json",
-          "url": "/reconciliation-runs/${run_id}/summary",
+          "url": "/reconciliation-runs/${run_id}/summary?include_refund_checks=false",
           "url_options": {
             "data": "",
             "method": "GET"
@@ -603,7 +603,7 @@
           "root_selector": "financial_summary.totals_by_currency",
           "source": "url",
           "type": "json",
-          "url": "/reconciliation-runs/${run_id}/summary",
+          "url": "/reconciliation-runs/${run_id}/summary?include_refund_checks=false",
           "url_options": {
             "data": "",
             "method": "GET"
@@ -753,7 +753,7 @@
           "root_selector": "financial_summary.refund_parent_metrics",
           "source": "url",
           "type": "json",
-          "url": "/reconciliation-runs/${run_id}/summary",
+          "url": "/reconciliation-runs/${run_id}/summary?include_refund_checks=false",
           "url_options": {
             "data": "",
             "method": "GET"
@@ -872,7 +872,7 @@
           "root_selector": "financial_summary.refunds_by_currency",
           "source": "url",
           "type": "json",
-          "url": "/reconciliation-runs/${run_id}/summary",
+          "url": "/reconciliation-runs/${run_id}/summary?include_refund_checks=false",
           "url_options": {
             "data": "",
             "method": "GET"
@@ -887,7 +887,7 @@
         "type": "yesoreyeram-infinity-datasource",
         "uid": "reconciliation-api"
       },
-      "description": "Refund parent/child checks returned by the summary API.",
+      "description": "Loads one cursor page at a time; Next/Previous fetch on demand and refresh reloads the current page. Column filters and sorting apply to this page.",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -985,87 +985,62 @@
       },
       "id": 8,
       "options": {
-        "cellHeight": "sm",
-        "enablePagination": true,
-        "footer": {
-          "countRows": true,
-          "fields": "",
-          "reducer": [
-            "sum"
-          ],
-          "show": true
-        },
-        "showHeader": true
-      },
-      "targets": [
-        {
-          "columns": [
-            {
-              "selector": "region",
-              "text": "Region",
-              "type": "string"
-            },
-            {
-              "selector": "tenant_id",
-              "text": "Tenant",
-              "type": "string"
-            },
-            {
-              "selector": "provider",
-              "text": "Provider",
-              "type": "string"
-            },
-            {
-              "selector": "refund_of",
-              "text": "Parent transaction",
-              "type": "string"
-            },
-            {
-              "selector": "currency",
-              "text": "Currency",
-              "type": "string"
-            },
-            {
-              "selector": "successful_child_count",
-              "text": "Successful children",
-              "type": "number"
-            },
-            {
-              "selector": "successful_child_amount_minor",
-              "text": "Children amount",
-              "type": "string"
-            },
-            {
-              "selector": "parent_refunded_amount_minor",
-              "text": "Parent refunded amount",
-              "type": "string"
-            },
-            {
-              "selector": "status",
-              "text": "Check result",
-              "type": "string"
-            }
-          ],
-          "datasource": {
-            "type": "yesoreyeram-infinity-datasource",
-            "uid": "reconciliation-api"
+        "resource": "refunds",
+        "datasourceUid": "reconciliation-api",
+        "runId": "${run_id}",
+        "outcome": "",
+        "pageSize": 100,
+        "columns": [
+          {
+            "selector": "region",
+            "text": "Region",
+            "type": "string"
           },
-          "filters": [],
-          "format": "table",
-          "parser": "backend",
-          "refId": "A",
-          "root_selector": "financial_summary.refund_cross_checks",
-          "source": "url",
-          "type": "json",
-          "url": "/reconciliation-runs/${run_id}/summary",
-          "url_options": {
-            "data": "",
-            "method": "GET"
+          {
+            "selector": "tenant_id",
+            "text": "Tenant",
+            "type": "string"
+          },
+          {
+            "selector": "provider",
+            "text": "Provider",
+            "type": "string"
+          },
+          {
+            "selector": "refund_of",
+            "text": "Parent transaction",
+            "type": "string"
+          },
+          {
+            "selector": "currency",
+            "text": "Currency",
+            "type": "string"
+          },
+          {
+            "selector": "successful_child_count",
+            "text": "Successful children",
+            "type": "number"
+          },
+          {
+            "selector": "successful_child_amount_minor",
+            "text": "Children amount",
+            "type": "string"
+          },
+          {
+            "selector": "parent_refunded_amount_minor",
+            "text": "Parent refunded amount",
+            "type": "string"
+          },
+          {
+            "selector": "status",
+            "text": "Check result",
+            "type": "string"
           }
-        }
-      ],
+        ]
+      },
+      "targets": [],
       "title": "Refund cross-checks",
-      "type": "table"
+      "type": "paymenthub-evidence-panel"
     },
     {
       "datasource": {
@@ -1238,7 +1213,7 @@
           "root_selector": "financial_summary.breakdowns",
           "source": "url",
           "type": "json",
-          "url": "/reconciliation-runs/${run_id}/summary",
+          "url": "/reconciliation-runs/${run_id}/summary?include_refund_checks=false",
           "url_options": {
             "data": "",
             "method": "GET"
@@ -1266,7 +1241,7 @@
         "type": "yesoreyeram-infinity-datasource",
         "uid": "reconciliation-api"
       },
-      "description": "Detailed evidence returned by GET /reconciliation-runs/{run_id}/results. Cursor pagination stops at 50 pages (10,000 rows by default).",
+      "description": "Loads one cursor page at a time (50, 100, or 200 rows). Next/Previous fetch on demand; refresh reloads the current page. Column sorting and filtering apply to the current page; Outcome filters the entire run.",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -1412,147 +1387,116 @@
       },
       "id": 10,
       "options": {
-        "cellHeight": "sm",
-        "enablePagination": true,
-        "footer": {
-          "countRows": true,
-          "fields": "",
-          "reducer": [
-            "sum"
-          ],
-          "show": true
-        },
-        "showHeader": true
-      },
-      "targets": [
-        {
-          "columns": [
-            {
-              "selector": "result_key",
-              "text": "#",
-              "type": "number"
-            },
-            {
-              "selector": "result_type",
-              "text": "Outcome",
-              "type": "string"
-            },
-            {
-              "selector": "region",
-              "text": "Region",
-              "type": "string"
-            },
-            {
-              "selector": "tenant_id",
-              "text": "Tenant",
-              "type": "string"
-            },
-            {
-              "selector": "provider",
-              "text": "Provider",
-              "type": "string"
-            },
-            {
-              "selector": "txn_type",
-              "text": "Transaction type",
-              "type": "string"
-            },
-            {
-              "selector": "system_txn_id",
-              "text": "System transaction ID",
-              "type": "string"
-            },
-            {
-              "selector": "system_provider_txn_id",
-              "text": "System provider ID",
-              "type": "string"
-            },
-            {
-              "selector": "system_status",
-              "text": "System status",
-              "type": "string"
-            },
-            {
-              "selector": "system_amount_minor",
-              "text": "System amount",
-              "type": "string"
-            },
-            {
-              "selector": "system_currency",
-              "text": "System currency",
-              "type": "string"
-            },
-            {
-              "selector": "refund_of",
-              "text": "Refund parent",
-              "type": "string"
-            },
-            {
-              "selector": "refunded_amount_minor",
-              "text": "Refunded amount",
-              "type": "string"
-            },
-            {
-              "selector": "provider_txn_id",
-              "text": "Provider transaction ID",
-              "type": "string"
-            },
-            {
-              "selector": "provider_amount_minor",
-              "text": "Provider amount",
-              "type": "string"
-            },
-            {
-              "selector": "provider_currency",
-              "text": "Provider currency",
-              "type": "string"
-            },
-            {
-              "selector": "delta_amount",
-              "text": "Delta",
-              "type": "string"
-            },
-            {
-              "selector": "source_file",
-              "text": "Source file",
-              "type": "string"
-            },
-            {
-              "selector": "source_row_number",
-              "text": "Source row",
-              "type": "number"
-            },
-            {
-              "selector": "reason",
-              "text": "Reason",
-              "type": "string"
-            }
-          ],
-          "datasource": {
-            "type": "yesoreyeram-infinity-datasource",
-            "uid": "reconciliation-api"
+        "datasourceUid": "reconciliation-api",
+        "runId": "${run_id}",
+        "outcome": "${result_type}",
+        "pageSize": 200,
+        "columns": [
+          {
+            "selector": "result_key",
+            "text": "#",
+            "type": "number"
           },
-          "filters": [],
-          "format": "table",
-          "pagination_max_pages": 50,
-          "pagination_mode": "cursor",
-          "pagination_param_cursor_extraction_path": "next_cursor",
-          "pagination_param_cursor_field_name": "cursor",
-          "pagination_param_cursor_field_type": "query",
-          "parser": "backend",
-          "refId": "A",
-          "root_selector": "items",
-          "source": "url",
-          "type": "json",
-          "url": "/reconciliation-runs/${run_id}/results?limit=200&result=${result_type}",
-          "url_options": {
-            "data": "",
-            "method": "GET"
+          {
+            "selector": "result_type",
+            "text": "Outcome",
+            "type": "string"
+          },
+          {
+            "selector": "region",
+            "text": "Region",
+            "type": "string"
+          },
+          {
+            "selector": "tenant_id",
+            "text": "Tenant",
+            "type": "string"
+          },
+          {
+            "selector": "provider",
+            "text": "Provider",
+            "type": "string"
+          },
+          {
+            "selector": "txn_type",
+            "text": "Transaction type",
+            "type": "string"
+          },
+          {
+            "selector": "system_txn_id",
+            "text": "System transaction ID",
+            "type": "string"
+          },
+          {
+            "selector": "system_provider_txn_id",
+            "text": "System provider ID",
+            "type": "string"
+          },
+          {
+            "selector": "system_status",
+            "text": "System status",
+            "type": "string"
+          },
+          {
+            "selector": "system_amount_minor",
+            "text": "System amount",
+            "type": "string"
+          },
+          {
+            "selector": "system_currency",
+            "text": "System currency",
+            "type": "string"
+          },
+          {
+            "selector": "refund_of",
+            "text": "Refund parent",
+            "type": "string"
+          },
+          {
+            "selector": "refunded_amount_minor",
+            "text": "Refunded amount",
+            "type": "string"
+          },
+          {
+            "selector": "provider_txn_id",
+            "text": "Provider transaction ID",
+            "type": "string"
+          },
+          {
+            "selector": "provider_amount_minor",
+            "text": "Provider amount",
+            "type": "string"
+          },
+          {
+            "selector": "provider_currency",
+            "text": "Provider currency",
+            "type": "string"
+          },
+          {
+            "selector": "delta_amount",
+            "text": "Delta",
+            "type": "string"
+          },
+          {
+            "selector": "source_file",
+            "text": "Source file",
+            "type": "string"
+          },
+          {
+            "selector": "source_row_number",
+            "text": "Source row",
+            "type": "number"
+          },
+          {
+            "selector": "reason",
+            "text": "Reason",
+            "type": "string"
           }
-        }
-      ],
+        ]
+      },
+      "targets": [],
       "title": "Transaction evidence · ${result_type:text}",
-      "type": "table"
+      "type": "paymenthub-evidence-panel"
     },
     {
       "datasource": {

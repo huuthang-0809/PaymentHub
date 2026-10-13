@@ -260,10 +260,13 @@ class PostgreReconRepository:
     @staticmethod
     def _load_completed(
         cursor, run_id: UUID, job_run_id: UUID, business_date: date,
-        *, include_results: bool = True,
+        *, include_results: bool = True, include_refund_checks: bool = True,
     ) -> StoredRun:
         cursor.execute(
-            "SELECT metrics FROM job_run_log WHERE job_run_id = %s",
+            ("SELECT metrics FROM job_run_log WHERE job_run_id = %s"
+             if include_refund_checks else
+             "SELECT metrics #- '{financial_summary,refund_cross_checks}' "
+             "FROM job_run_log WHERE job_run_id = %s"),
             (job_run_id,),
         )
         metrics = cursor.fetchone()[0]
@@ -303,6 +306,9 @@ class PostgreReconRepository:
         if financial_summary is None and include_results:
             # Compatibility for runs completed before summary snapshots existed.
             financial_summary = asdict(build_financial_summary(results))
+        if not include_refund_checks and financial_summary is not None:
+            financial_summary = {key: value for key, value in financial_summary.items()
+                                 if key != "refund_cross_checks"}
         return StoredRun(
             # Runs created before F06 did not store system_rows in metrics.
             system_rows=metrics.get(

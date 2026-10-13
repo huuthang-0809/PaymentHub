@@ -140,8 +140,17 @@ def list_reconciliation_runs(
 
 
 @router.get('/{run_id}/summary')
-def get_reconciliation_summary(request: Request, run_id: UUID):
-    return jsonable_encoder(_query(request.app.state.query_reconciliation.summary, run_id=run_id))
+def get_reconciliation_summary(request: Request, run_id: UUID, include_refund_checks: bool = True):
+    parameters = {} if include_refund_checks else {'include_refund_checks': False}
+    return jsonable_encoder(_query(request.app.state.query_reconciliation.summary,
+                                  run_id=run_id, **parameters))
+
+
+@router.get('/{run_id}/refund-cross-checks')
+def get_refund_cross_checks(request: Request, run_id: UUID,
+                           limit: int = Query(50, ge=1, le=200), cursor: str | None = None):
+    return jsonable_encoder(_query(request.app.state.query_reconciliation.refund_checks,
+                                  run_id=run_id, limit=limit, cursor=cursor))
 
 
 @router.get('/{run_id}/results')
