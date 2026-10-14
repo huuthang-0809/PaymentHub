@@ -1,11 +1,12 @@
 from .aggregate import AggregateKey, CanonicalEvent, WindowAggregate, WindowAggregator
 from .alerts import AlertAction, AlertRecord, AlertStatus, AlertTransition
-from .freshness import FreshnessStatus, HealthRunnerStatus
+from .freshness import FreshnessStatus, HealthRunnerStatus, classify_source_freshness
 from .health import (
     Comparison,
     EvaluationScope,
     EvaluationStatus,
     HealthEvaluation,
+    HealthDecisionPolicy,
     HealthEvaluator,
     HealthImpact,
     HealthMetric,
@@ -33,6 +34,7 @@ __all__ = [
     "EvaluationStatus",
     "EventTiming",
     "HealthEvaluation",
+    "HealthDecisionPolicy",
     "HealthEvaluator",
     "HealthImpact",
     "HealthMetric",
@@ -40,6 +42,7 @@ __all__ = [
     "HealthRunnerStatus",
     "HealthStatus",
     "FreshnessStatus",
+    "classify_source_freshness",
     "HealthWindow",
     "MetricRule",
     "RuleConfig",

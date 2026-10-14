@@ -19,6 +19,7 @@ class FakeRepository:
         self.ready = ready
         self.calls = []
         self.window_error = None
+        self.window_next_offset = None
 
     def is_ready(self):
         return self.ready
@@ -70,6 +71,7 @@ class FakeRepository:
                 ),
             ),
             data_as_of=computed_at,
+            next_offset=self.window_next_offset,
         )
 
     def list_transactions(self, *, region, status, limit):
@@ -191,3 +193,20 @@ def test_window_metrics_database_timeout_returns_safe_503():
         }
     }
     assert "secret database detail" not in response.text
+
+
+def test_window_metrics_cursor_round_trip_and_sort_whitelist():
+    repository = FakeRepository()
+    repository.window_next_offset = 10
+    app = create_app(repository, cursor_secret="test-cursor-secret")
+
+    first = request(app, "/metrics/windows?limit=10&sort=-window_start")
+    cursor = first.json()["meta"]["next_cursor"]
+    assert cursor
+    second = request(app, f"/metrics/windows?limit=10&cursor={cursor}")
+    assert second.status_code == 200
+    assert repository.calls[-1].offset == 10
+
+    invalid = request(app, "/metrics/windows?sort=provider")
+    assert invalid.status_code == 422
+    assert invalid.json()["error"]["code"] == "VALIDATION_ERROR"

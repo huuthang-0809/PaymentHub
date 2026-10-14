@@ -34,7 +34,78 @@ class MetricRule:
     ) -> RuleEvaluation:
         if self.config.metric is HealthMetric.FRESHNESS_LAG_SECONDS:
             return self._freshness(evaluated_at, data_as_of)
-        return self._rate(windows, data_as_of)
+        if self.config.metric in {HealthMetric.SUCCESS_RATE, HealthMetric.FAILURE_RATE}:
+            return self._rate(windows, data_as_of)
+        return self._operational(windows, data_as_of)
+
+    def _operational(
+        self,
+        windows: tuple[HealthWindow, ...],
+        data_as_of: datetime | None,
+    ) -> RuleEvaluation:
+        selected = tuple(
+            sorted(
+                (
+                    window for window in windows
+                    if window.window_size_minutes == self.config.window_size_minutes
+                ),
+                key=lambda window: window.window_end,
+                reverse=True,
+            )[: self.config.lookback_windows]
+        )
+        if not selected:
+            return self._result(
+                EvaluationStatus.INSUFFICIENT_DATA,
+                reason_code="NO_CLOSED_WINDOW",
+                message="no closed window is available",
+                observed_value=None,
+                sample_size=None,
+                windows=(),
+                data_as_of=data_as_of,
+            )
+        metric = self.config.metric
+        if metric is HealthMetric.VOLUME_RATIO:
+            current = sum(item.total_event_count for item in selected)
+            baseline = sum(item.baseline_event_count for item in selected)
+            if baseline <= 0:
+                return self._result(
+                    EvaluationStatus.INSUFFICIENT_DATA,
+                    reason_code="NO_VOLUME_BASELINE",
+                    message="same-slot volume baseline is unavailable",
+                    observed_value=None,
+                    sample_size=current,
+                    windows=selected,
+                    data_as_of=data_as_of,
+                )
+            observed = (Decimal(current) / Decimal(baseline)).quantize(_RATE_QUANTUM)
+        else:
+            field = {
+                HealthMetric.DATA_QUALITY_ERROR_COUNT: "data_quality_error_count",
+                HealthMetric.QUEUE_PRESSURE: "queue_pressure",
+                HealthMetric.ASIA_QR_VA_PENDING_OVER_24H: "asia_qr_va_pending_age_seconds",
+                HealthMetric.ASIA_REFUND_SHAPE_B_PENDING: "asia_refund_shape_b_pending_age_seconds",
+                HealthMetric.INDIA_NON_TERMINAL_OVER_AGE: "india_non_terminal_age_seconds",
+                HealthMetric.INDIA_REFUND_CREATED_OVER_AGE: "india_refund_created_age_seconds",
+            }[metric]
+            values = []
+            for item in selected:
+                if field == "data_quality_error_count":
+                    values.append(item.unknown_count + item.invalid_amount_count)
+                elif field == "queue_pressure":
+                    values.append(max(item.queue_lag_seconds, item.dlq_count))
+                else:
+                    values.append(getattr(item, field))
+            observed = Decimal(max(values, default=0))
+        breached = _compare(observed, self.config.comparison, self.config.threshold)
+        return self._result(
+            EvaluationStatus.BREACH if breached else EvaluationStatus.PASS,
+            reason_code=f"{metric.value.upper()}_{'BREACH' if breached else 'PASS'}",
+            message=f"{metric.value} {'breached' if breached else 'passed'} configured threshold",
+            observed_value=observed,
+            sample_size=sum(item.total_event_count for item in selected),
+            windows=selected,
+            data_as_of=data_as_of,
+        )
 
     def _rate(
         self,
@@ -142,6 +213,13 @@ class MetricRule:
             last_window_end=max(ends, default=None),
             runbook_ref=self.config.runbook_ref,
             data_as_of=data_as_of,
+            txn_ids=tuple(
+                dict.fromkeys(
+                    txn_id
+                    for window in windows
+                    for txn_id in window.evidence_txn_ids.get(self.config.metric, ())
+                )
+            )[:5],
         )
         return RuleEvaluation(config=self.config, status=status, reason=reason)
 

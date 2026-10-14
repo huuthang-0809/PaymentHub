@@ -1,0 +1,19 @@
+{
+  "profile": "WEEK5_PROVISIONAL",
+  "contract_status": "AWAITING_TECHNICAL_LEAD_APPROVAL",
+  "decision_policy": {
+    "unhealthy_requires_distinct_metrics": 2,
+    "single_metric_breach_status": "DEGRADED"
+  },
+  "rules": [
+    {"rule_id":"W5_VOLUME_DROP_V1","rule_version":1,"metric":"volume_ratio","comparison":"LT","threshold":"0.200000","minimum_sample":null,"window_size_minutes":15,"lookback_windows":1,"breach_windows":2,"recovery_windows":2,"health_impact":"UNHEALTHY","severity":"CRITICAL","cooldown_seconds":900,"runbook_ref":"docs/runbooks/provider-health-week5-provisional.md#1-w5_volume_drop_v1"},
+    {"rule_id":"W5_FAILURE_RATE_V1","rule_version":1,"metric":"failure_rate","comparison":"GTE","threshold":"0.200000","minimum_sample":100,"window_size_minutes":5,"lookback_windows":1,"breach_windows":2,"recovery_windows":2,"health_impact":"UNHEALTHY","severity":"CRITICAL","cooldown_seconds":900,"runbook_ref":"docs/runbooks/provider-health-week5-provisional.md#2-w5_failure_rate_v1"},
+    {"rule_id":"W5_STALE_DATA_V1","rule_version":1,"metric":"freshness_lag_seconds","comparison":"GT","threshold":600,"minimum_sample":null,"window_size_minutes":null,"lookback_windows":1,"breach_windows":1,"recovery_windows":1,"health_impact":"DEGRADED","severity":"WARNING","cooldown_seconds":900,"runbook_ref":"docs/runbooks/provider-health-week5-provisional.md#3-w5_stale_data_v1"},
+    {"rule_id":"W5_DATA_QUALITY_V1","rule_version":1,"metric":"data_quality_error_count","comparison":"GT","threshold":0,"minimum_sample":null,"window_size_minutes":5,"lookback_windows":1,"breach_windows":1,"recovery_windows":2,"health_impact":"DEGRADED","severity":"WARNING","cooldown_seconds":900,"runbook_ref":"docs/runbooks/provider-health-week5-provisional.md#4-w5_data_quality_v1"},
+    {"rule_id":"W5_QUEUE_PRESSURE_V1","rule_version":1,"metric":"queue_pressure","comparison":"GT","threshold":30,"minimum_sample":null,"window_size_minutes":5,"lookback_windows":1,"breach_windows":2,"recovery_windows":2,"health_impact":"UNHEALTHY","severity":"CRITICAL","cooldown_seconds":900,"runbook_ref":"docs/runbooks/provider-health-week5-provisional.md#5-w5_queue_pressure_v1"},
+    {"rule_id":"W5_ASIA_QR_VA_PENDING_24H_V1","rule_version":1,"metric":"asia_qr_va_pending_over_24h","comparison":"GT","threshold":86400,"minimum_sample":null,"window_size_minutes":15,"lookback_windows":1,"breach_windows":1,"recovery_windows":1,"health_impact":"UNHEALTHY","severity":"CRITICAL","cooldown_seconds":1800,"runbook_ref":"docs/runbooks/provider-health-week5-provisional.md#6-w5_asia_qr_va_pending_24h_v1"},
+    {"rule_id":"W5_ASIA_REFUND_SHAPE_B_PENDING_V1","rule_version":1,"metric":"asia_refund_shape_b_pending","comparison":"GT","threshold":3600,"minimum_sample":null,"window_size_minutes":15,"lookback_windows":1,"breach_windows":1,"recovery_windows":1,"health_impact":"DEGRADED","severity":"WARNING","cooldown_seconds":1800,"runbook_ref":"docs/runbooks/provider-health-week5-provisional.md#7-w5_asia_refund_shape_b_pending_v1"},
+    {"rule_id":"W5_INDIA_NON_TERMINAL_AGE_V1","rule_version":1,"metric":"india_non_terminal_over_age","comparison":"GT","threshold":1800,"minimum_sample":null,"window_size_minutes":15,"lookback_windows":1,"breach_windows":1,"recovery_windows":1,"health_impact":"DEGRADED","severity":"WARNING","cooldown_seconds":900,"runbook_ref":"docs/runbooks/provider-health-week5-provisional.md#8-w5_india_non_terminal_age_v1"},
+    {"rule_id":"W5_INDIA_REFUND_CREATED_AGE_V1","rule_version":1,"metric":"india_refund_created_over_age","comparison":"GT","threshold":900,"minimum_sample":null,"window_size_minutes":15,"lookback_windows":1,"breach_windows":1,"recovery_windows":1,"health_impact":"UNHEALTHY","severity":"CRITICAL","cooldown_seconds":900,"runbook_ref":"docs/runbooks/provider-health-week5-provisional.md#9-w5_india_refund_created_age_v1"}
+  ]
+}

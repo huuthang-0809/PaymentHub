@@ -13,12 +13,13 @@ def test_week5_report_is_reproducible_and_has_explicit_confusion_matrix() -> Non
     computed = build_report()
     assert committed == computed
     assert computed["dataset"] == {
-        "rules": 9,
-        "cases_per_rule": 4,
-        "positive_cases_per_rule": 2,
-        "negative_cases_per_rule": 2,
-        "scheduler_interval_seconds": 300,
+        "cases": 36,
         "evaluation_delay_seconds": 60,
+        "negative_cases": 18,
+        "positive_cases": 18,
+        "rules": 9,
+        "scheduler_interval_seconds": 300,
+        "source": "tests/fixtures/monitoring/health-alerts/incidents.yaml",
     }
     assert computed["overall"] == {
         "tp": 18,
@@ -27,6 +28,8 @@ def test_week5_report_is_reproducible_and_has_explicit_confusion_matrix() -> Non
         "tn": 18,
         "precision": 1.0,
         "recall": 1.0,
-        "mttd_seconds": 593.3333333333334,
+        "mttd_seconds": 460.0,
+        "targets_met": True,
     }
+    assert computed["targets"] == {"precision_min": 0.70, "recall_min": 0.80}
     assert len(computed["per_rule"]) == 9

@@ -11,9 +11,33 @@ from .health import EvaluationScope
 
 class FreshnessStatus(str, Enum):
     FRESH = "FRESH"
+    IDLE = "IDLE"
     STALE = "STALE"
+    UNAVAILABLE = "UNAVAILABLE"
     NO_DATA = "NO_DATA"
     FAILED = "FAILED"
+
+
+def classify_source_freshness(
+    *,
+    event_lag_seconds: int | None,
+    heartbeat_lag_seconds: int | None,
+    sla_seconds: int,
+) -> FreshnessStatus:
+    """Separate legitimate data idleness from source unavailability."""
+    if sla_seconds < 0:
+        raise ValueError("freshness SLA cannot be negative")
+    if heartbeat_lag_seconds is not None:
+        if heartbeat_lag_seconds > sla_seconds:
+            return FreshnessStatus.UNAVAILABLE
+        if event_lag_seconds is None or event_lag_seconds > sla_seconds:
+            return FreshnessStatus.IDLE
+        return FreshnessStatus.FRESH
+    if event_lag_seconds is None:
+        return FreshnessStatus.NO_DATA
+    if event_lag_seconds <= sla_seconds:
+        return FreshnessStatus.FRESH
+    return FreshnessStatus.STALE
 
 
 @dataclass(frozen=True, slots=True)

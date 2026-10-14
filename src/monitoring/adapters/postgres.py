@@ -161,7 +161,7 @@ class PostgresTransactionRepository(TransactionQueryRepository):
             where.append("window_end <= %s")
             parameters.append(query.end)
         predicate = " AND ".join(where)
-        parameters.append(query.limit)
+        parameters.extend((query.limit + 1, query.offset))
         sql = f"""
             SELECT window_size_minutes, window_start, window_end, region,
                    tenant_scope, provider, txn_type, instrument, channel_raw,
@@ -180,7 +180,7 @@ class PostgresTransactionRepository(TransactionQueryRepository):
             WHERE {predicate}
             ORDER BY window_start DESC, region, tenant_scope, provider,
                      txn_type, instrument, channel_raw, currency
-            LIMIT %s
+            LIMIT %s OFFSET %s
         """
         try:
             with self._connect() as connection:
@@ -203,8 +203,14 @@ class PostgresTransactionRepository(TransactionQueryRepository):
         ) as error:
             raise MonitoringUnavailable("Monitoring database is unavailable") from error
 
+        has_more = len(rows) > query.limit
+        rows = rows[: query.limit]
         items = tuple(self._to_window_metric(row) for row in rows)
-        return WindowMetricPage(items=items, data_as_of=data_as_of)
+        return WindowMetricPage(
+            items=items,
+            data_as_of=data_as_of,
+            next_offset=query.offset + query.limit if has_more else None,
+        )
 
     @staticmethod
     def _to_window_metric(row: tuple[Any, ...]) -> WindowMetric:
@@ -248,9 +254,15 @@ class PostgresTransactionRepository(TransactionQueryRepository):
 
 
 class PostgresCanonicalEventRepository:
-    def __init__(self, connection: Any, job_run_id: UUID) -> None:
+    def __init__(
+        self,
+        connection: Any,
+        job_run_id: UUID,
+        aggregate_from: datetime | None = None,
+    ) -> None:
         self.connection = connection
         self.job_run_id = job_run_id
+        self.aggregate_from = aggregate_from
 
     def contains(self, event: CanonicalEvent) -> bool:
         event_date, idempotency_key, database_id = _identity(event)
@@ -304,6 +316,9 @@ class PostgresCanonicalEventRepository:
                 "channel_raw": transaction.channel_raw,
                 "parse_error": event.parse_error,
                 "is_late": event.is_late,
+                "event_time_late": event.event_time_late,
+                "arrival_late": event.arrival_late,
+                "arrival_lag_seconds": event.arrival_lag_seconds,
             },
         }
         inserted_event = self.connection.execute(
@@ -314,11 +329,13 @@ class PostgresCanonicalEventRepository:
                 status, provider_txn_id, provider_ref_id, merchant_ref,
                 refund_of, amount_minor, currency, amount_status, created_at,
                 updated_at, is_terminal, is_money_movement, is_reconcilable,
-                is_deleted, is_test_data, raw, job_run_id
+                is_deleted, is_test_data, raw, job_run_id, received_at,
+                event_time_late, arrival_late, arrival_lag_seconds
             ) VALUES (
                 %s, %s, %s, 'TRUSTED', %s, %s, %s, %s, %s, %s,
                 %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                %s, %s, %s, %s, %s, %s, %s, %s
+                %s, %s, %s, %s, %s, %s, %s, %s,
+                %s, %s, %s, %s
             )
             ON CONFLICT (event_date, idempotency_key) DO NOTHING
             RETURNING event_id
@@ -350,6 +367,10 @@ class PostgresCanonicalEventRepository:
                 transaction.is_test_data,
                 Jsonb(raw, dumps=lambda value: json.dumps(value, default=_json_default)),
                 self.job_run_id,
+                event.received_at,
+                event.event_time_late,
+                event.arrival_late,
+                event.arrival_lag_seconds,
             ),
         ).fetchone()
         return inserted_event is not None
@@ -362,10 +383,13 @@ class PostgresCanonicalEventRepository:
                    updated_at, amount_minor, currency, is_terminal,
                    is_money_movement, is_reconcilable, is_deleted,
                    is_test_data, provider_txn_id, provider_ref_id,
-                   merchant_ref, refund_of, raw
+                   merchant_ref, refund_of, raw, received_at,
+                   event_time_late, arrival_late, arrival_lag_seconds
             FROM canonical_event
+            WHERE (%s IS NULL OR event_time >= %s)
             ORDER BY event_date, event_time, idempotency_key
-            """
+            """,
+            (self.aggregate_from, self.aggregate_from),
         ).fetchall()
         return tuple(self._to_event(row) for row in rows)
 
@@ -409,6 +433,10 @@ class PostgresCanonicalEventRepository:
                 )
             ),
             is_late=bool(monitoring.get("is_late", False)),
+            received_at=row[23],
+            event_time_late=bool(row[24]),
+            arrival_late=bool(row[25]),
+            arrival_lag_seconds=row[26],
         )
 
 
@@ -523,6 +551,7 @@ class PostgresEventUnitOfWork:
         job_name: str = "monitoring-canonical-events",
         source_name: str = "replay",
         business_date: date | None = None,
+        aggregate_from: datetime | None = None,
     ) -> None:
         self.dsn = _dsn(
             dsn
@@ -534,6 +563,7 @@ class PostgresEventUnitOfWork:
         self.job_name = job_name
         self.source_name = source_name
         self.business_date = business_date or datetime.now(UTC).date()
+        self.aggregate_from = aggregate_from
         self.job_run_id = uuid4()
         self.connection: Any | None = None
         self.events: PostgresCanonicalEventRepository
@@ -596,7 +626,7 @@ class PostgresEventUnitOfWork:
                 "SELECT pg_advisory_xact_lock(%s)", (_AGGREGATION_LOCK_ID,)
             )
             self.events = PostgresCanonicalEventRepository(
-                self.connection, self.job_run_id
+                self.connection, self.job_run_id, self.aggregate_from
             )
             self.aggregates = PostgresWindowAggregateRepository(
                 self.connection, self.job_run_id
@@ -696,6 +726,38 @@ class PostgresEventUnitOfWork:
             ),
         ).fetchone()
         return row is not None
+
+    def record_event_activity(self, event: CanonicalEvent) -> None:
+        if self.connection is None:
+            raise RuntimeError("unit of work is not active")
+        transaction = event.transaction
+        received_at = event.received_at or datetime.now(UTC)
+        self.connection.execute(
+            """
+            INSERT INTO source_activity (
+                source_name, region, tenant_scope, provider,
+                last_message_received_at, last_event_received_at, last_event_time
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (source_name, region, tenant_scope, provider) DO UPDATE SET
+                last_message_received_at = GREATEST(
+                    source_activity.last_message_received_at,
+                    EXCLUDED.last_message_received_at
+                ),
+                last_event_received_at = GREATEST(
+                    source_activity.last_event_received_at,
+                    EXCLUDED.last_event_received_at
+                ),
+                last_event_time = GREATEST(
+                    source_activity.last_event_time, EXCLUDED.last_event_time
+                ),
+                updated_at = now()
+            """,
+            (
+                self.source_name, transaction.region.value,
+                transaction.tenant_id or "", transaction.provider,
+                received_at, received_at, event.event_time,
+            ),
+        )
 
     def persist_checkpoint(self) -> None:
         if not self._committed:

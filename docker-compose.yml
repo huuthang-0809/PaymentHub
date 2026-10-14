@@ -134,7 +134,7 @@ services:
         condition: service_completed_successfully
 
   rabbitmq:
-    profiles: ["monitoring", "tools"]
+    profiles: ["monitoring", "realtime", "tools"]
     image: rabbitmq:4-management
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-paymenthub}
@@ -162,14 +162,36 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql+psycopg://paymenthub:${POSTGRES_PASSWORD:-paymenthub}@postgres:5432/paymenthub
-      RABBITMQ_URL: amqp://paymenthub:paymenthub@rabbitmq:5672/
-      RABBITMQ_PREFETCH_COUNT: ${RABBITMQ_PREFETCH_COUNT:-100}
+      RABBITMQ_URL: amqp://paymenthub:${RABBITMQ_PASSWORD:-paymenthub}@rabbitmq:5672/
+      RABBITMQ_PREFETCH: "${RABBITMQ_PREFETCH:-20}"
+      RABBITMQ_BATCH_SIZE: "${RABBITMQ_BATCH_SIZE:-20}"
+      RABBITMQ_BATCH_WAIT_SECONDS: "${RABBITMQ_BATCH_WAIT_SECONDS:-5}"
       MONITORING_WINDOW_SIZES: ${MONITORING_WINDOW_SIZES:-1,5,15}
       MONITORING_ALLOWED_LATENESS_MINUTES: ${MONITORING_ALLOWED_LATENESS_MINUTES:-5}
       MONITORING_RETENTION_HOURS: ${MONITORING_RETENTION_HOURS:-24}
+      MONITORING_REALTIME_LOOKBACK_HOURS: "${MONITORING_REALTIME_LOOKBACK_HOURS:-24}"
     depends_on:
       migrate:
         condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+
+  realtime-simulator:
+    profiles: ["realtime"]
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    command: ["python", "-m", "bootstrap.realtime_transaction_simulator"]
+    restart: unless-stopped
+    environment:
+      RABBITMQ_URL: amqp://paymenthub:${RABBITMQ_PASSWORD:-paymenthub}@rabbitmq:5672/
+      REALTIME_SEED: "${REALTIME_SEED:-20261013}"
+      REALTIME_TXNS_PER_SECOND: "${REALTIME_TXNS_PER_SECOND:-0.2}"
+      REALTIME_FAILURE_RATE: "${REALTIME_FAILURE_RATE:-0.03}"
+      REALTIME_STUCK_RATE: "${REALTIME_STUCK_RATE:-0.01}"
+      REALTIME_MIN_TERMINAL_DELAY_SECONDS: "${REALTIME_MIN_TERMINAL_DELAY_SECONDS:-2}"
+      REALTIME_MAX_TERMINAL_DELAY_SECONDS: "${REALTIME_MAX_TERMINAL_DELAY_SECONDS:-12}"
+    depends_on:
       rabbitmq:
         condition: service_healthy
 

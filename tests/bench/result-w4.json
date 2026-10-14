@@ -1,23 +1,15 @@
 {
-  "aggregate_total_count": 22,
-  "benchmark": "p1-w4-replay-lineage",
-  "canonical_rows": 24,
-  "complete_job_runs": 2,
+  "benchmark": "p1-w4-rabbitmq-kill-during-ingest",
+  "canonical_rows": 25,
+  "container_killed": "rabbitmq-consumer",
+  "distinct_event_ids": 25,
   "duplicated": 0,
-  "elapsed_seconds": 0.109111,
-  "environment": {
-    "postgres": "15",
-    "python": "3.12.14"
-  },
-  "expected_aggregate_total_count": 22,
-  "expected_unique_events": 24,
-  "fixture": "tests/fixtures/monitoring/events.jsonl",
-  "generated_at": "2026-10-05T10:05:04.308346Z",
-  "input_records_per_run": 25,
+  "generated_at": "2026-10-12T03:11:19.527365Z",
+  "kill_after_confirmed": 10,
+  "kill_percent": 40,
   "lost": 0,
   "null_job_run_id_rows": 0,
   "pass": true,
-  "redeliveries_deduplicated": 25,
-  "runs": 2,
-  "schema_version": 1
+  "publisher_confirmed": 25,
+  "schema_version": 2
 }

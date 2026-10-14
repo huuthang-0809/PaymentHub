@@ -36,3 +36,16 @@ class WatermarkPolicy:
         if event_time < watermark - self.allowed_lateness:
             return EventTiming.LATE
         return EventTiming.ON_TIME
+
+    def classify_arrival(
+        self, event_time: datetime, received_at: datetime | None
+    ) -> bool:
+        """Return whether a real-time event arrived outside the allowed delay.
+
+        A missing received_at means replay/backfill, where wall-clock lateness must
+        not be inferred from the time at which the replay happens.
+        """
+        if received_at is None:
+            return False
+        lag = ensure_utc(received_at) - ensure_utc(event_time)
+        return lag > self.allowed_lateness

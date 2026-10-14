@@ -33,10 +33,18 @@ class CanonicalEvent:
     transaction: CanonicalTransaction
     parse_error: bool = False
     is_late: bool = False
+    received_at: datetime | None = None
+    event_time_late: bool = False
+    arrival_late: bool = False
+    arrival_lag_seconds: int | None = None
 
     def __post_init__(self) -> None:
         if not self.event_id.strip():
             raise ValueError("event_id cannot be empty")
+        if self.received_at is not None:
+            object.__setattr__(self, "received_at", ensure_utc(self.received_at))
+        if self.arrival_lag_seconds is not None and self.arrival_lag_seconds < 0:
+            raise ValueError("arrival_lag_seconds cannot be negative")
 
     @property
     def event_time(self) -> datetime:

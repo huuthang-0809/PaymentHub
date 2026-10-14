@@ -22,6 +22,7 @@ dependencies = [
     "prometheus-client>=0.23,<1",
     "python-dotenv>=1.2.3",
     "aio-pika>=10.1.0",
+    "duckdb>=1.5.5",
 ]
 
 [project.scripts]
@@ -72,6 +73,5 @@ source = ["src"]
 show_missing = true
 [dependency-groups]
 dev = [
-    "duckdb>=1.5.5",
     "httpx>=0.28.1",
 ]

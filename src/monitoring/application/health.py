@@ -186,7 +186,10 @@ class EvaluateProviderHealth:
     ) -> HealthEvaluationOutput:
         evaluated_at = ensure_utc(evaluated_at or self.clock())
         configs = tuple(self.config_repository.list_active())
-        evaluator = HealthEvaluator(MetricRule(config) for config in configs)
+        evaluator = HealthEvaluator(
+            (MetricRule(config) for config in configs),
+            decision_policy=self.config_repository.decision_policy(),
+        )
         windows = tuple(
             self.metric_source.list_closed_windows(scope, evaluated_at=evaluated_at)
         )

@@ -10,6 +10,7 @@ from monitoring.domain import (
     EvaluationScope,
     EventTiming,
     HealthWindow,
+    HealthDecisionPolicy,
     RuleConfig,
     RuleState,
     WatermarkPolicy,
@@ -136,6 +137,10 @@ class InMemoryEventUnitOfWork:
         }
         return True
 
+    def record_event_activity(self, event: CanonicalEvent) -> None:
+        # The in-memory adapter has no independent freshness store.
+        return None
+
     def commit(self) -> None:
         self._committed = True
         self.commits += 1
@@ -178,6 +183,9 @@ class InMemoryRuleConfigRepository:
 
     def list_active(self) -> tuple[RuleConfig, ...]:
         return self._configs
+
+    def decision_policy(self) -> HealthDecisionPolicy:
+        return HealthDecisionPolicy()
 
 
 class InMemoryRuleStateRepository:

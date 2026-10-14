@@ -90,6 +90,25 @@ def test_insert_failure_is_counted_without_losing_valid_event() -> None:
     assert unit_of_work.events.list_events() == (first,)
 
 
+def test_fail_fast_propagates_event_write_error_without_committing() -> None:
+    first = load_fixture(FIXTURE)[0]
+    collision = CanonicalEvent(
+        first.event_id,
+        replace(first.transaction, status=CanonicalStatus.FAILED),
+    )
+    unit_of_work = InMemoryEventUnitOfWork()
+
+    with pytest.raises(ValueError, match="collision"):
+        ProcessCanonicalEvents(unit_of_work).execute(
+            [first, collision],
+            computed_at=COMPUTED_AT,
+            fail_fast=True,
+        )
+
+    assert unit_of_work.commits == 0
+    assert unit_of_work.events.list_events() == ()
+
+
 def test_cli_prints_replay_evidence_without_raw_payload(capsys) -> None:
     exit_code = main(
         [
@@ -152,6 +171,21 @@ def _event_at(event_id: str, txn_id: str, value: datetime) -> CanonicalEvent:
             updated_at=value,
         ),
     )
+
+
+def test_arrival_late_counts_when_watermark_did_not_advance() -> None:
+    event_time = datetime(2026, 10, 12, 9, 30, tzinfo=UTC)
+    event = replace(
+        _event_at("idle-gap", "idle-gap", event_time),
+        received_at=datetime(2026, 10, 12, 10, 5, tzinfo=UTC),
+    )
+
+    output = ProcessCanonicalEvents(InMemoryEventUnitOfWork()).execute(
+        [event], computed_at=event.received_at
+    )
+
+    assert output.summary.late == 1
+    assert output.aggregates[0].late_event_count == 1
 
 
 def test_late_expired_duplicate_and_restart_are_idempotent() -> None:

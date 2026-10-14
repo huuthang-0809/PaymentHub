@@ -2,7 +2,7 @@ from .health import AlertManager, EvaluateProviderHealth, HealthEvaluationOutput
 from .health_query import (
     AlertCursorCodec, AlertItem, AlertPage, AlertQuery, FreshnessItem,
     FreshnessPage, FreshnessQuery, ProviderHealthItem, ProviderHealthPage,
-    ProviderHealthQuery,
+    ProviderHealthQuery, OffsetCursorCodec,
 )
 from .ports import (
     AlertRepository,
@@ -47,6 +47,7 @@ __all__ = [
     "MonitoringQueryService",
     "MonitoringUnavailable",
     "NotificationPort",
+    "OffsetCursorCodec",
     "ProcessCanonicalEvents",
     "ProcessingOutput",
     "ProcessingSummary",

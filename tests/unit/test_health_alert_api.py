@@ -47,6 +47,8 @@ class HealthRepository:
         self.calls = []
         self.error = None
         self.alert_page_number = 0
+        self.provider_next_offset = None
+        self.freshness_next_offset = None
 
     def _raise(self):
         if self.error is not None:
@@ -70,6 +72,7 @@ class HealthRepository:
                 ),
             ),
             data_as_of=NOW,
+            next_offset=self.provider_next_offset,
         )
 
     def list_alerts(self, query):
@@ -105,6 +108,7 @@ class HealthRepository:
             last_evaluated_at=NOW,
             last_notified_at=None,
             resolved_at=None,
+            txn_ids=("txn-1", "txn-2", "txn-3", "txn-4", "txn-5"),
         )
         return AlertPage(
             items=(item,),
@@ -134,6 +138,7 @@ class HealthRepository:
                 ),
             ),
             data_as_of=None,
+            next_offset=self.freshness_next_offset,
         )
 
 
@@ -183,6 +188,9 @@ def test_alert_cursor_round_trip_and_tamper_rejection() -> None:
     assert cursor
     assert first.json()["data"][0]["observed_value"] == "0.500000"
     assert first.json()["data"][0]["reasons"][0]["raw"] == "***MASKED***"
+    assert first.json()["data"][0]["txn_ids"] == [
+        "txn-1", "txn-2", "txn-3", "txn-4", "txn-5"
+    ]
 
     second = _get(app, f"/alerts?limit=1&cursor={cursor}")
     assert second.status_code == 200
@@ -226,3 +234,37 @@ def test_health_endpoints_map_database_timeout_to_503(path: str) -> None:
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "SERVICE_UNAVAILABLE"
     assert "secret details" not in response.text
+
+
+def test_health_and_freshness_cursors_are_signed_and_endpoint_bound() -> None:
+    health = HealthRepository()
+    health.provider_next_offset = 5
+    health.freshness_next_offset = 7
+    app = create_app(BaseRepository(), health, cursor_secret="test-cursor-secret")
+
+    health_cursor = _get(app, "/health/providers?limit=5").json()["meta"]["next_cursor"]
+    response = _get(app, f"/health/providers?limit=5&cursor={health_cursor}")
+    assert response.status_code == 200
+    assert health.calls[-1].offset == 5
+
+    wrong_endpoint = _get(app, f"/_meta/freshness?cursor={health_cursor}")
+    assert wrong_endpoint.status_code == 422
+
+    freshness_cursor = _get(app, "/_meta/freshness?limit=7").json()["meta"]["next_cursor"]
+    response = _get(app, f"/_meta/freshness?limit=7&cursor={freshness_cursor}")
+    assert response.status_code == 200
+    assert health.calls[-1].offset == 7
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/health/providers?sort=provider",
+        "/alerts?sort=severity",
+        "/_meta/freshness?sort=-last_run_at",
+    ],
+)
+def test_health_api_rejects_non_whitelisted_sort(path: str) -> None:
+    response = _get(create_app(BaseRepository(), HealthRepository()), path)
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"

@@ -20,6 +20,7 @@ from monitoring.application import (
     MonitoringQueryRepository,
     MonitoringQueryService,
     MonitoringUnavailable,
+    OffsetCursorCodec,
     ProviderHealthItem,
     ProviderHealthQuery,
     WindowMetric,
@@ -120,6 +121,7 @@ def _alert_item(row: AlertItem) -> dict[str, Any]:
         "minimum_sample": row.minimum_sample,
         "window_size_minutes": row.window_size_minutes,
         "evaluated_window_count": row.evaluated_window_count,
+        "txn_ids": list(row.txn_ids)[:5],
         "reasons": mask_raw(list(row.reasons)),
         "occurrence_count": row.occurrence_count,
         "cooldown_seconds": row.cooldown_seconds,
@@ -160,6 +162,10 @@ def create_app(
     app = FastAPI(title="PaymentHub API")
     health_repository = health_repository or repository
     cursor_codec = AlertCursorCodec(
+        cursor_secret
+        or os.getenv("MONITORING_CURSOR_SECRET", "local-demo-cursor-secret")
+    )
+    offset_cursor_codec = OffsetCursorCodec(
         cursor_secret
         or os.getenv("MONITORING_CURSOR_SECRET", "local-demo-cursor-secret")
     )
@@ -229,11 +235,15 @@ def create_app(
         end: datetime | None = None,
         window_size: int = Query(default=5),
         limit: int = Query(default=100, ge=1, le=500),
+        cursor: str | None = Query(default=None, max_length=1000),
+        sort: str = Query(default="-window_start", max_length=50),
     ) -> dict[str, Any]:
+        offset = offset_cursor_codec.decode(cursor, endpoint="metrics/windows") if cursor else 0
         page = MonitoringQueryService(repository).get_windows(
-            WindowMetricQuery(region=region, tenant_id=tenant_id, start=start, end=end, window_size=window_size, limit=limit)
+            WindowMetricQuery(region=region, tenant_id=tenant_id, start=start, end=end, window_size=window_size, limit=limit, offset=offset, sort=sort)
         )
-        return {"data": [_window_item(row) for row in page.items], "meta": {"count": len(page.items), "data_as_of": _iso(page.data_as_of), "next_cursor": None, "trace_id": request.state.trace_id}}
+        next_cursor = offset_cursor_codec.encode(endpoint="metrics/windows", offset=page.next_offset) if page.next_offset is not None else None
+        return {"data": [_window_item(row) for row in page.items], "meta": {"count": len(page.items), "data_as_of": _iso(page.data_as_of), "next_cursor": next_cursor, "trace_id": request.state.trace_id}}
 
     @app.get("/health/providers")
     async def provider_health(
@@ -243,11 +253,15 @@ def create_app(
         provider: str | None = Query(default=None, max_length=100),
         status: HealthStatus | None = None,
         limit: int = Query(default=100, ge=1, le=500),
+        cursor: str | None = Query(default=None, max_length=1000),
+        sort: str = Query(default="scope", max_length=50),
     ) -> dict[str, Any]:
+        offset = offset_cursor_codec.decode(cursor, endpoint="health/providers") if cursor else 0
         page = health_repository.list_provider_health(
-            ProviderHealthQuery(region, tenant_id, provider, status, limit)
+            ProviderHealthQuery(region, tenant_id, provider, status, limit, offset, sort)
         )
-        return {"data": [_health_item(row) for row in page.items], "meta": {"count": len(page.items), "data_as_of": _iso(page.data_as_of), "next_cursor": None, "trace_id": request.state.trace_id}}
+        next_cursor = offset_cursor_codec.encode(endpoint="health/providers", offset=page.next_offset) if page.next_offset is not None else None
+        return {"data": [_health_item(row) for row in page.items], "meta": {"count": len(page.items), "data_as_of": _iso(page.data_as_of), "next_cursor": next_cursor, "trace_id": request.state.trace_id}}
 
     @app.get("/alerts")
     async def alerts(
@@ -260,10 +274,11 @@ def create_app(
         provider: str | None = Query(default=None, max_length=100),
         limit: int = Query(default=100, ge=1, le=200),
         cursor: str | None = Query(default=None, max_length=1000),
+        sort: str = Query(default="-opened_at", max_length=50),
     ) -> dict[str, Any]:
         cursor_key = cursor_codec.decode(cursor) if cursor else (None, None)
         page = health_repository.list_alerts(
-            AlertQuery(status, severity, rule_id, region, tenant_id, provider, limit, *cursor_key)
+            AlertQuery(status, severity, rule_id, region, tenant_id, provider, limit, *cursor_key, sort)
         )
         return {"data": [_alert_item(row) for row in page.items], "meta": {"count": len(page.items), "data_as_of": _iso(page.data_as_of), "next_cursor": cursor_codec.encode(page.next_key) if page.next_key else None, "trace_id": request.state.trace_id}}
 
@@ -275,11 +290,15 @@ def create_app(
         provider: str | None = Query(default=None, max_length=100),
         status: FreshnessStatus | None = None,
         limit: int = Query(default=100, ge=1, le=500),
+        cursor: str | None = Query(default=None, max_length=1000),
+        sort: str = Query(default="scope", max_length=50),
     ) -> dict[str, Any]:
+        offset = offset_cursor_codec.decode(cursor, endpoint="_meta/freshness") if cursor else 0
         page = health_repository.list_freshness(
-            FreshnessQuery(region, tenant_id, provider, status, limit)
+            FreshnessQuery(region, tenant_id, provider, status, limit, offset, sort)
         )
-        return {"data": [_freshness_item(row) for row in page.items], "meta": {"count": len(page.items), "data_as_of": _iso(page.data_as_of), "next_cursor": None, "trace_id": request.state.trace_id}}
+        next_cursor = offset_cursor_codec.encode(endpoint="_meta/freshness", offset=page.next_offset) if page.next_offset is not None else None
+        return {"data": [_freshness_item(row) for row in page.items], "meta": {"count": len(page.items), "data_as_of": _iso(page.data_as_of), "next_cursor": next_cursor, "trace_id": request.state.trace_id}}
 
     return app
 

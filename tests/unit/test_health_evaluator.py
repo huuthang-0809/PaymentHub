@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -181,6 +182,58 @@ def test_multi_reason_precedence_preserves_both_breaches() -> None:
         HealthImpact.UNHEALTHY,
         HealthImpact.DEGRADED,
     }
+
+
+def test_multiple_rules_for_one_metric_cannot_declare_unhealthy() -> None:
+    source = _load("window-series.json")
+    cycle = source["cycles"][2]
+    scope = _scope(source, "onepay-vn")
+    critical = _configs()[0]
+    duplicate_signal = replace(
+        critical,
+        rule_id="SAME_SIGNAL_DIFFERENT_THRESHOLD",
+        threshold=Decimal("0.95"),
+    )
+
+    result = HealthEvaluator(
+        (MetricRule(critical), MetricRule(duplicate_signal))
+    ).evaluate(
+        scope,
+        _windows(source, cycle, "onepay-vn"),
+        evaluated_at=_timestamp(cycle["evaluated_at"]),
+    )
+
+    assert all(item.status is EvaluationStatus.BREACH for item in result.evaluations)
+    assert result.status is HealthStatus.DEGRADED
+
+
+def test_alert_reason_keeps_at_most_five_unique_evidence_txn_ids() -> None:
+    source = _load("window-series.json")
+    cycle = source["cycles"][2]
+    scope = _scope(source, "onepay-vn")
+    windows = _windows(source, cycle, "onepay-vn")
+    first = replace(
+        windows[0],
+        evidence_txn_ids={
+            HealthMetric.FAILURE_RATE: ("txn-1", "txn-2", "txn-3")
+        },
+    )
+    second = replace(
+        windows[0],
+        evidence_txn_ids={
+            HealthMetric.FAILURE_RATE: ("txn-3", "txn-4", "txn-5", "txn-6")
+        },
+    )
+
+    result = MetricRule(replace(_configs()[1], lookback_windows=2)).evaluate(
+        (first, second),
+        evaluated_at=_timestamp(cycle["evaluated_at"]),
+        data_as_of=max(first.data_as_of, second.data_as_of),
+    )
+
+    assert result.reason.txn_ids == (
+        "txn-1", "txn-2", "txn-3", "txn-4", "txn-5"
+    )
 
 
 

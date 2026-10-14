@@ -77,7 +77,7 @@ class PostgresHealthQueryRepository:
             where.append("latest.health_status = %s")
             parameters.append(query.status.value)
         predicate = "WHERE " + " AND ".join(where) if where else ""
-        parameters.append(query.limit)
+        parameters.extend((query.limit + 1, query.offset))
         rows = self._rows(
             f"""
             WITH latest AS (
@@ -105,10 +105,12 @@ class PostgresHealthQueryRepository:
                      latest.health_status, latest.reasons, latest.evaluations,
                      latest.evaluated_at, latest.data_as_of
             ORDER BY latest.region, latest.tenant_scope, latest.provider
-            LIMIT %s
+            LIMIT %s OFFSET %s
             """,
             parameters,
         )
+        has_more = len(rows) > query.limit
+        rows = rows[: query.limit]
         items = tuple(
             ProviderHealthItem(
                 region=Region(row[0]),
@@ -129,6 +131,7 @@ class PostgresHealthQueryRepository:
                 (item.data_as_of for item in items if item.data_as_of is not None),
                 default=None,
             ),
+            next_offset=query.offset + query.limit if has_more else None,
         )
 
     def list_alerts(self, query: AlertQuery) -> AlertPage:
@@ -190,7 +193,7 @@ class PostgresHealthQueryRepository:
             where.append("freshness_status = %s")
             parameters.append(query.status.value)
         predicate = "WHERE " + " AND ".join(where) if where else ""
-        parameters.append(query.limit)
+        parameters.extend((query.limit + 1, query.offset))
         rows = self._rows(
             f"""
             SELECT region, tenant_scope, provider, last_run_at,
@@ -200,10 +203,12 @@ class PostgresHealthQueryRepository:
             FROM health_runner_status
             {predicate}
             ORDER BY region, tenant_scope, provider
-            LIMIT %s
+            LIMIT %s OFFSET %s
             """,
             parameters,
         )
+        has_more = len(rows) > query.limit
+        rows = rows[: query.limit]
         items = tuple(
             FreshnessItem(
                 source_name="provider-health",
@@ -228,6 +233,7 @@ class PostgresHealthQueryRepository:
                 (item.data_as_of for item in items if item.data_as_of is not None),
                 default=None,
             ),
+            next_offset=query.offset + query.limit if has_more else None,
         )
 
     @staticmethod
@@ -244,6 +250,14 @@ class PostgresHealthQueryRepository:
 
     @staticmethod
     def _alert_item(row: tuple[Any, ...]) -> AlertItem:
+        reasons = tuple(row[18])
+        txn_ids = tuple(
+            dict.fromkeys(
+                str(txn_id)
+                for reason in reasons
+                for txn_id in reason.get("txn_ids", ())
+            )
+        )[:5]
         return AlertItem(
             alert_id=str(row[0]),
             region=Region(row[1]),
@@ -263,7 +277,7 @@ class PostgresHealthQueryRepository:
             minimum_sample=row[15],
             window_size_minutes=row[16],
             evaluated_window_count=row[17],
-            reasons=tuple(row[18]),
+            reasons=reasons,
             occurrence_count=row[19],
             cooldown_seconds=row[20],
             runbook_ref=row[21],
@@ -273,4 +287,5 @@ class PostgresHealthQueryRepository:
             last_evaluated_at=row[25],
             last_notified_at=row[26],
             resolved_at=row[27],
+            txn_ids=txn_ids,
         )

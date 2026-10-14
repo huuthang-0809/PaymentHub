@@ -24,3 +24,14 @@ def test_demo_watermark_policy_boundaries() -> None:
 def test_invalid_watermark_policy_is_rejected() -> None:
     with pytest.raises(ValueError, match="retention"):
         WatermarkPolicy(timedelta(minutes=5), timedelta(minutes=5))
+
+
+def test_arrival_lateness_detects_idle_watermark_gap_but_skips_replay() -> None:
+    policy = WatermarkPolicy(allowed_lateness=timedelta(minutes=5))
+    event_time = datetime(2026, 10, 12, 9, 30, tzinfo=UTC)
+
+    assert policy.classify(event_time, event_time) is EventTiming.ON_TIME
+    assert policy.classify_arrival(
+        event_time, datetime(2026, 10, 12, 10, 5, tzinfo=UTC)
+    ) is True
+    assert policy.classify_arrival(event_time, None) is False

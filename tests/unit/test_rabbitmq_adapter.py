@@ -9,6 +9,7 @@ from monitoring.adapters.rabbitmq import (
     RETRY_EXCHANGE,
     PermanentMessageError,
     RabbitMQMessageHandler,
+    SourceHeartbeat,
     decode_canonical_event,
     mask_sensitive,
     reprocess_dlq_message,
@@ -94,6 +95,25 @@ def test_decode_canonical_event_and_reject_unsafe_boolean_coercion():
         decode_canonical_event(
             json.dumps(_payload(is_terminal="false")).encode()
         )
+
+
+def test_decode_heartbeat_for_idle_source_monitoring():
+    heartbeat = decode_canonical_event(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "message_type": "heartbeat",
+                "source_name": "provider-gateway",
+                "region": "VN",
+                "provider": "ONEPAY",
+                "sent_at": "2026-10-12T10:05:00Z",
+            }
+        ).encode()
+    )
+
+    assert isinstance(heartbeat, SourceHeartbeat)
+    assert heartbeat.source_name == "provider-gateway"
+    assert heartbeat.provider == "ONEPAY"
 
 
 def test_ack_happens_only_after_database_handler_returns():

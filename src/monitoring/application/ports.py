@@ -11,6 +11,7 @@ from monitoring.domain import (
     HealthEvaluation,
     HealthWindow,
     RuleConfig,
+    HealthDecisionPolicy,
     RuleState,
     WindowAggregate,
 )
@@ -73,6 +74,8 @@ class EventUnitOfWork(Protocol):
 
     def audit_expired(self, event: CanonicalEvent) -> bool: ...
 
+    def record_event_activity(self, event: CanonicalEvent) -> None: ...
+
     def commit(self) -> None: ...
 
     def persist_checkpoint(self) -> None: ...
@@ -88,6 +91,8 @@ class HealthMetricSource(Protocol):
 
 class RuleConfigRepository(Protocol):
     def list_active(self) -> Sequence[RuleConfig]: ...
+
+    def decision_policy(self) -> HealthDecisionPolicy: ...
 
 
 class RuleStateRepository(Protocol):

@@ -96,7 +96,7 @@ def test_empty_database_upgrade_enforces_alert_lifecycle_constraints() -> None:
             revision = connection.execute(
                 "SELECT version_num FROM alembic_version"
             ).fetchone()[0]
-            assert revision == "0017"
+            assert revision == "0019"
 
             columns = {
                 row[0]

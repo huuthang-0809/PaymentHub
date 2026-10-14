@@ -6,6 +6,7 @@ from pathlib import Path
 
 from monitoring.domain import (
     Comparison,
+    HealthDecisionPolicy,
     HealthImpact,
     HealthMetric,
     RuleConfig,
@@ -13,13 +14,18 @@ from monitoring.domain import (
 )
 
 
-class JsonRuleConfigRepository:
+class FileRuleConfigRepository:
+    """Load versioned rule configuration from JSON or JSON-compatible YAML.
+
+    JSON is a valid YAML 1.2 subset, which keeps this adapter dependency-free
+    while allowing the deployed contract to use the required `.yaml` file.
+    """
     def __init__(self, path: Path | str, *, required_profile: str = "DEMO_ONLY") -> None:
         self.path = Path(path)
         self.required_profile = required_profile
 
     def list_active(self) -> tuple[RuleConfig, ...]:
-        document = json.loads(self.path.read_text(encoding="utf-8"))
+        document = self._document()
         if document.get("profile") != self.required_profile:
             raise ValueError(
                 f"rule profile must be {self.required_profile!r}"
@@ -31,6 +37,20 @@ class JsonRuleConfigRepository:
         if len(identities) != len(rules):
             raise ValueError("rule config identities must be unique")
         return rules
+
+    def decision_policy(self) -> HealthDecisionPolicy:
+        values = self._document().get("decision_policy", {})
+        return HealthDecisionPolicy(
+            unhealthy_requires_distinct_metrics=int(
+                values.get("unhealthy_requires_distinct_metrics", 2)
+            )
+        )
+
+    def _document(self) -> dict:
+        document = json.loads(self.path.read_text(encoding="utf-8"))
+        if not isinstance(document, dict):
+            raise ValueError("rule config must be an object")
+        return document
 
     @staticmethod
     def _rule(item: dict) -> RuleConfig:
@@ -50,3 +70,7 @@ class JsonRuleConfigRepository:
             cooldown_seconds=int(item["cooldown_seconds"]),
             runbook_ref=str(item["runbook_ref"]),
         )
+
+
+# Backward-compatible name for demo fixtures and existing callers.
+JsonRuleConfigRepository = FileRuleConfigRepository

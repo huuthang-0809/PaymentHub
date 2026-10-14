@@ -21,11 +21,17 @@ class ProviderHealthQuery:
     provider: str | None = None
     status: HealthStatus | None = None
     limit: int = 100
+    offset: int = 0
+    sort: str = "scope"
 
     def __post_init__(self) -> None:
         _validate_scope_filters(self.tenant_id, self.provider)
         if not 1 <= self.limit <= 500:
             raise ValueError("limit must be between 1 and 500")
+        if self.offset < 0:
+            raise ValueError("cursor offset cannot be negative")
+        if self.sort != "scope":
+            raise ValueError("sort must be one of: scope")
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,6 +51,7 @@ class ProviderHealthItem:
 class ProviderHealthPage:
     items: Sequence[ProviderHealthItem]
     data_as_of: datetime | None
+    next_offset: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,6 +65,7 @@ class AlertQuery:
     limit: int = 100
     cursor_opened_at: datetime | None = None
     cursor_alert_id: UUID | None = None
+    sort: str = "-opened_at"
 
     def __post_init__(self) -> None:
         _validate_scope_filters(self.tenant_id, self.provider)
@@ -67,6 +75,8 @@ class AlertQuery:
             raise ValueError("limit must be between 1 and 200")
         if (self.cursor_opened_at is None) != (self.cursor_alert_id is None):
             raise ValueError("cursor sort keys must be supplied together")
+        if self.sort != "-opened_at":
+            raise ValueError("sort must be one of: -opened_at")
         if self.cursor_opened_at is not None:
             object.__setattr__(
                 self, "cursor_opened_at", ensure_utc(self.cursor_opened_at)
@@ -103,6 +113,7 @@ class AlertItem:
     last_evaluated_at: datetime
     last_notified_at: datetime | None
     resolved_at: datetime | None
+    txn_ids: Sequence[str] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,11 +130,17 @@ class FreshnessQuery:
     provider: str | None = None
     status: FreshnessStatus | None = None
     limit: int = 100
+    offset: int = 0
+    sort: str = "scope"
 
     def __post_init__(self) -> None:
         _validate_scope_filters(self.tenant_id, self.provider)
         if not 1 <= self.limit <= 500:
             raise ValueError("limit must be between 1 and 500")
+        if self.offset < 0:
+            raise ValueError("cursor offset cannot be negative")
+        if self.sort != "scope":
+            raise ValueError("sort must be one of: scope")
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,6 +164,7 @@ class FreshnessItem:
 class FreshnessPage:
     items: Sequence[FreshnessItem]
     data_as_of: datetime | None
+    next_offset: int | None = None
 
 
 def _validate_scope_filters(tenant_id: str | None, provider: str | None) -> None:
@@ -194,3 +212,41 @@ class AlertCursorCodec:
 
 def _pad(value: str) -> bytes:
     return (value + "=" * (-len(value) % 4)).encode()
+
+
+class OffsetCursorCodec:
+    """Signed opaque cursor bound to one endpoint and its stable sort."""
+
+    def __init__(self, secret: str) -> None:
+        if len(secret) < 16:
+            raise ValueError("cursor secret must contain at least 16 characters")
+        self.secret = secret.encode()
+
+    def encode(self, *, endpoint: str, offset: int) -> str:
+        payload = json.dumps(
+            {"v": 1, "endpoint": endpoint, "offset": offset},
+            separators=(",", ":"), sort_keys=True,
+        ).encode()
+        encoded = base64.urlsafe_b64encode(payload).rstrip(b"=")
+        signature = hmac.new(self.secret, encoded, hashlib.sha256).digest()
+        return encoded.decode() + "." + base64.urlsafe_b64encode(signature).rstrip(b"=").decode()
+
+    def decode(self, cursor: str, *, endpoint: str) -> int:
+        try:
+            encoded, supplied = cursor.split(".", 1)
+            encoded_bytes = encoded.encode()
+            expected = hmac.new(self.secret, encoded_bytes, hashlib.sha256).digest()
+            signature = base64.urlsafe_b64decode(_pad(supplied))
+            if not hmac.compare_digest(signature, expected):
+                raise ValueError("cursor signature is invalid")
+            document = json.loads(base64.urlsafe_b64decode(_pad(encoded)))
+            if set(document) != {"v", "endpoint", "offset"}:
+                raise ValueError("cursor payload is invalid")
+            if document["v"] != 1 or document["endpoint"] != endpoint:
+                raise ValueError("cursor endpoint or version is invalid")
+            offset = int(document["offset"])
+            if offset < 0:
+                raise ValueError("cursor offset is invalid")
+            return offset
+        except Exception as error:
+            raise ValueError("cursor is invalid") from error

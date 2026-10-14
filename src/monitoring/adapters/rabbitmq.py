@@ -4,7 +4,7 @@ import inspect
 import json
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 import aio_pika
@@ -63,6 +63,16 @@ class ConsumerResult:
     retry_count: int = 0
 
 
+@dataclass(frozen=True, slots=True)
+class SourceHeartbeat:
+    source_name: str
+    region: Region
+    tenant_scope: str
+    provider: str
+    sent_at: datetime
+    received_at: datetime
+
+
 def mask_sensitive(value: Any) -> Any:
     """Copy a JSON value while masking secrets recursively."""
     if isinstance(value, Mapping):
@@ -110,7 +120,7 @@ def _timestamp(value: Any, name: str) -> datetime | None:
     return parsed
 
 
-def decode_canonical_event(body: bytes) -> CanonicalEvent:
+def decode_canonical_event(body: bytes) -> CanonicalEvent | SourceHeartbeat:
     """Decode the version-1 canonical-event JSON wire contract."""
     try:
         payload = json.loads(body)
@@ -120,6 +130,21 @@ def decode_canonical_event(body: bytes) -> CanonicalEvent:
         raise PermanentMessageError("INVALID_SHAPE", "body must be a JSON object")
     if payload.get("schema_version", 1) != 1:
         raise PermanentMessageError("UNSUPPORTED_SCHEMA", "schema_version must be 1")
+    if payload.get("message_type") == "heartbeat":
+        sent_at = _timestamp(_required(payload, "sent_at"), "sent_at")
+        if sent_at is None:
+            raise PermanentMessageError("INVALID_TIMESTAMP", "sent_at is required")
+        try:
+            return SourceHeartbeat(
+                source_name=str(payload.get("source_name", "rabbitmq:canonical-events")),
+                region=Region(_required(payload, "region")),
+                tenant_scope=str(payload.get("tenant_id") or ""),
+                provider=str(_required(payload, "provider")),
+                sent_at=sent_at,
+                received_at=datetime.now(UTC),
+            )
+        except (TypeError, ValueError) as error:
+            raise PermanentMessageError("MAPPING_ERROR", str(error)) from error
     try:
         instrument = payload.get("instrument")
         raw = payload.get("raw", {})
@@ -154,6 +179,9 @@ def decode_canonical_event(body: bytes) -> CanonicalEvent:
             event_id=str(_required(payload, "event_id")),
             transaction=transaction,
             parse_error=_boolean(payload, "parse_error", default=False),
+            # Set at ingress. Batch/replay constructors leave this absent, so
+            # historical replay is not incorrectly classified by wall clock.
+            received_at=datetime.now(UTC),
         )
     except PermanentMessageError:
         raise
@@ -167,7 +195,7 @@ class RabbitMQMessageHandler:
     def __init__(
         self,
         channel: AbstractChannel,
-        process: Callable[[CanonicalEvent], Awaitable[None] | None],
+        process: Callable[[CanonicalEvent | SourceHeartbeat], Awaitable[None] | None],
         *,
         transient_errors: tuple[type[BaseException], ...] = (OSError, TimeoutError),
     ) -> None:

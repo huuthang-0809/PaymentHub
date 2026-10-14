@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable, Sequence
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
@@ -19,10 +19,12 @@ from monitoring.domain import (
     HealthEvaluation,
     HealthRunnerStatus,
     HealthImpact,
+    HealthMetric,
     HealthReason,
     HealthWindow,
     RuleState,
     Severity,
+    classify_source_freshness,
 )
 from shared_kernel import Region
 
@@ -76,6 +78,7 @@ def _reason_payload(reason: HealthReason) -> dict[str, Any]:
             if reason.data_as_of is not None
             else None
         ),
+        "txn_ids": list(reason.txn_ids),
     }
 
 
@@ -105,7 +108,10 @@ class PostgresHealthMetricSource:
                        sum(operation_event_count)::bigint,
                        sum(success_count)::bigint,
                        sum(failed_count)::bigint,
-                       max(last_event_at) AS data_as_of
+                       max(last_event_at) AS data_as_of,
+                       sum(total_count)::bigint,
+                       sum(unknown_count)::bigint,
+                       sum(invalid_amount_count)::bigint
                 FROM window_aggregate
                 WHERE region = %s
                   AND tenant_scope = %s
@@ -123,6 +129,124 @@ class PostgresHealthMetricSource:
                     self.limit,
                 ),
             ).fetchall()
+            enriched_rows = []
+            for row in rows:
+                baseline = connection.execute(
+                    """
+                    SELECT coalesce(round(avg(slot_total)), 0)::bigint
+                    FROM (
+                        SELECT window_start, sum(total_count)::bigint AS slot_total
+                        FROM window_aggregate
+                        WHERE region = %s AND tenant_scope = %s AND provider = %s
+                          AND window_size_minutes = %s AND window_start < %s
+                          AND window_start >= %s - interval '28 days'
+                          AND extract(isodow FROM window_start) = extract(isodow FROM %s::timestamptz)
+                          AND extract(hour FROM window_start) = extract(hour FROM %s::timestamptz)
+                          AND extract(minute FROM window_start) = extract(minute FROM %s::timestamptz)
+                        GROUP BY window_start
+                    ) history
+                    """,
+                    (scope.region.value, scope.tenant_scope, scope.provider,
+                     row[0], row[1], row[1], row[1], row[1], row[1]),
+                ).fetchone()[0]
+                enriched_rows.append((*row, baseline))
+            rows = enriched_rows
+            queue_row = connection.execute(
+                """
+                SELECT coalesce(extract(epoch FROM (
+                    now() - (min(created_at) FILTER (
+                        WHERE status IN ('READY', 'PROCESSING')
+                    ))
+                )), 0)::bigint,
+                    count(*) FILTER (WHERE status = 'DEAD_LETTER')::bigint
+                FROM monitoring_queue_message
+                """
+            ).fetchone()
+            pending_row = connection.execute(
+                """
+                WITH latest AS (
+                    SELECT DISTINCT ON (region, tenant_id, txn_id)
+                           region, txn_type, status, refund_of, created_at,
+                           raw->'__monitoring__'->>'instrument' AS instrument
+                    FROM canonical_event
+                    WHERE region = %s AND coalesce(tenant_id, '') = %s
+                      AND provider = %s AND is_deleted = false AND is_test_data = false
+                    ORDER BY region, tenant_id, txn_id, event_time DESC, event_id DESC
+                )
+                SELECT
+                    coalesce(max(extract(epoch FROM (%s - created_at))) FILTER (
+                        WHERE region = 'ASIA' AND instrument IN ('QR', 'VIRTUAL_ACCOUNT')
+                          AND status IN ('CREATED', 'PENDING')), 0)::bigint,
+                    coalesce(max(extract(epoch FROM (%s - created_at))) FILTER (
+                        WHERE region = 'ASIA' AND txn_type = 'REFUND' AND refund_of IS NOT NULL
+                          AND status IN ('CREATED', 'PENDING')), 0)::bigint,
+                    coalesce(max(extract(epoch FROM (%s - created_at))) FILTER (
+                        WHERE region = 'INDIA' AND status IN ('CREATED', 'PENDING', 'UNKNOWN')),
+                        0)::bigint,
+                    coalesce(max(extract(epoch FROM (%s - created_at))) FILTER (
+                        WHERE region = 'INDIA' AND txn_type = 'REFUND' AND status = 'CREATED'),
+                        0)::bigint
+                FROM latest
+                """,
+                (scope.region.value, scope.tenant_scope, scope.provider,
+                 evaluated_at, evaluated_at, evaluated_at, evaluated_at),
+            ).fetchone()
+            evidence_rows = connection.execute(
+                """
+                SELECT txn_id, region, txn_type, status, refund_of, created_at,
+                       raw->'__monitoring__'->>'instrument' AS instrument,
+                       amount_status
+                FROM (
+                    SELECT DISTINCT ON (region, tenant_id, txn_id)
+                           txn_id, region, tenant_id, txn_type, status, refund_of,
+                           created_at, event_time, event_id, raw, amount_status
+                    FROM canonical_event
+                    WHERE region = %s AND coalesce(tenant_id, '') = %s
+                      AND provider = %s AND is_deleted = false AND is_test_data = false
+                    ORDER BY region, tenant_id, txn_id, event_time DESC, event_id DESC
+                ) latest
+                ORDER BY created_at ASC, event_id ASC
+                LIMIT 200
+                """,
+                (scope.region.value, scope.tenant_scope, scope.provider),
+            ).fetchall()
+            evidence: dict[HealthMetric, tuple[str, ...]] = {}
+
+            def ids(predicate) -> tuple[str, ...]:
+                return tuple(dict.fromkeys(row[0] for row in evidence_rows if predicate(row)))[:5]
+
+            evidence[HealthMetric.FAILURE_RATE] = ids(
+                lambda row: row[3] in {"FAILED", "EXPIRED", "CANCELLED"}
+            )
+            evidence[HealthMetric.DATA_QUALITY_ERROR_COUNT] = ids(
+                lambda row: row[3] == "UNKNOWN" or row[7] == "INVALID"
+            )
+            evidence[HealthMetric.ASIA_QR_VA_PENDING_OVER_24H] = ids(
+                lambda row: row[1] == "ASIA"
+                and row[6] in {"QR", "VIRTUAL_ACCOUNT"}
+                and row[3] in {"CREATED", "PENDING"}
+            )
+            evidence[HealthMetric.ASIA_REFUND_SHAPE_B_PENDING] = ids(
+                lambda row: row[1] == "ASIA" and row[2] == "REFUND"
+                and row[4] is not None and row[3] in {"CREATED", "PENDING"}
+            )
+            evidence[HealthMetric.INDIA_NON_TERMINAL_OVER_AGE] = ids(
+                lambda row: row[1] == "INDIA"
+                and row[3] in {"CREATED", "PENDING", "UNKNOWN"}
+            )
+            evidence[HealthMetric.INDIA_REFUND_CREATED_OVER_AGE] = ids(
+                lambda row: row[1] == "INDIA" and row[2] == "REFUND"
+                and row[3] == "CREATED"
+            )
+            heartbeat_row = connection.execute(
+                """
+                SELECT max(last_heartbeat_at)
+                FROM source_activity
+                WHERE region = %s AND tenant_scope = %s AND provider = %s
+                """,
+                (scope.region.value, scope.tenant_scope, scope.provider),
+            ).fetchone()
+            last_heartbeat_at = heartbeat_row[0] if heartbeat_row else None
         return tuple(
             HealthWindow(
                 scope=scope,
@@ -132,7 +256,25 @@ class PostgresHealthMetricSource:
                 operation_event_count=row[3],
                 success_count=row[4],
                 failed_count=row[5],
-                data_as_of=row[6],
+                # A live heartbeat proves the source/transport is healthy even
+                # when there were legitimately no business events. Aggregate
+                # APIs still expose event-only freshness separately.
+                data_as_of=max(
+                    row[6], min(last_heartbeat_at, row[2] - timedelta(microseconds=1))
+                )
+                if last_heartbeat_at is not None
+                else row[6],
+                total_event_count=row[7],
+                unknown_count=row[8],
+                invalid_amount_count=row[9],
+                baseline_event_count=row[10],
+                queue_lag_seconds=queue_row[0],
+                dlq_count=queue_row[1],
+                asia_qr_va_pending_age_seconds=pending_row[0],
+                asia_refund_shape_b_pending_age_seconds=pending_row[1],
+                india_non_terminal_age_seconds=pending_row[2],
+                india_refund_created_age_seconds=pending_row[3],
+                evidence_txn_ids=evidence,
             )
             for row in rows
         )
@@ -542,14 +684,34 @@ class PostgresHealthRunnerStatusRepository:
             if data_as_of is not None
             else None
         )
-        status = (
-            "NO_DATA"
-            if lag is None
-            else "FRESH"
-            if lag <= freshness_sla_seconds
-            else "STALE"
-        )
         with self._connect() as connection:
+            activity = connection.execute(
+                """
+                SELECT max(last_message_received_at), max(last_heartbeat_at)
+                FROM source_activity
+                WHERE region = %s AND tenant_scope = %s AND provider = %s
+                """,
+                (scope.region.value, scope.tenant_scope, scope.provider),
+            ).fetchone()
+            last_message_at, last_heartbeat_at = activity or (None, None)
+            heartbeat_lag = (
+                max(0, int((run_at - last_heartbeat_at).total_seconds()))
+                if last_heartbeat_at is not None else None
+            )
+            transport_lag = (
+                max(0, int((run_at - last_message_at).total_seconds()))
+                if last_message_at is not None else None
+            )
+            status = classify_source_freshness(
+                event_lag_seconds=lag,
+                heartbeat_lag_seconds=heartbeat_lag,
+                sla_seconds=freshness_sla_seconds,
+            ).value
+            summary = {
+                **summary,
+                "heartbeat_lag_seconds": heartbeat_lag,
+                "transport_lag_seconds": transport_lag,
+            }
             connection.execute(
                 """
                 INSERT INTO health_runner_status (

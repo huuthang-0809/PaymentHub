@@ -20,12 +20,18 @@ class WindowMetricQuery:
     end: datetime | None = None
     window_size: int = 5
     limit: int = 100
+    offset: int = 0
+    sort: str = "-window_start"
 
     def __post_init__(self) -> None:
         if self.window_size not in {1, 5, 15}:
             raise ValueError("window_size must be one of 1, 5 or 15")
         if not 1 <= self.limit <= 500:
             raise ValueError("limit must be between 1 and 500")
+        if self.offset < 0:
+            raise ValueError("cursor offset cannot be negative")
+        if self.sort != "-window_start":
+            raise ValueError("sort must be one of: -window_start")
         if self.tenant_id is not None:
             tenant = self.tenant_id.strip()
             if not tenant or len(tenant) > 100:
@@ -85,6 +91,7 @@ class WindowMetric:
 class WindowMetricPage:
     items: Sequence[WindowMetric]
     data_as_of: datetime | None
+    next_offset: int | None = None
 
 
 class MonitoringQueryService:

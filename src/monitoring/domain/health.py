@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
-from dataclasses import dataclass, replace
+from collections.abc import Callable, Iterable, Mapping
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from enum import Enum
@@ -41,9 +41,26 @@ class Comparison(str, Enum):
 
 
 class HealthMetric(str, Enum):
-    SUCCESS_RATE = "success_rate"
+    VOLUME_RATIO = "volume_ratio"
     FAILURE_RATE = "failure_rate"
     FRESHNESS_LAG_SECONDS = "freshness_lag_seconds"
+    DATA_QUALITY_ERROR_COUNT = "data_quality_error_count"
+    QUEUE_PRESSURE = "queue_pressure"
+    ASIA_QR_VA_PENDING_OVER_24H = "asia_qr_va_pending_over_24h"
+    ASIA_REFUND_SHAPE_B_PENDING = "asia_refund_shape_b_pending"
+    INDIA_NON_TERMINAL_OVER_AGE = "india_non_terminal_over_age"
+    INDIA_REFUND_CREATED_OVER_AGE = "india_refund_created_over_age"
+    # Retained for demo/backward compatibility, not part of Week 5 production 9.
+    SUCCESS_RATE = "success_rate"
+
+
+@dataclass(frozen=True, slots=True)
+class HealthDecisionPolicy:
+    unhealthy_requires_distinct_metrics: int = 2
+
+    def __post_init__(self) -> None:
+        if self.unhealthy_requires_distinct_metrics < 2:
+            raise ValueError("UNHEALTHY must require at least two distinct metrics")
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,6 +86,19 @@ class HealthWindow:
     success_count: int
     failed_count: int
     data_as_of: datetime
+    total_event_count: int = 0
+    baseline_event_count: int = 0
+    unknown_count: int = 0
+    invalid_amount_count: int = 0
+    queue_lag_seconds: int = 0
+    dlq_count: int = 0
+    asia_qr_va_pending_age_seconds: int = 0
+    asia_refund_shape_b_pending_age_seconds: int = 0
+    india_non_terminal_age_seconds: int = 0
+    india_refund_created_age_seconds: int = 0
+    evidence_txn_ids: Mapping[HealthMetric, tuple[str, ...]] = field(
+        default_factory=dict
+    )
 
     def __post_init__(self) -> None:
         start = ensure_utc(self.window_start)
@@ -84,6 +114,16 @@ class HealthWindow:
             self.operation_event_count,
             self.success_count,
             self.failed_count,
+            self.total_event_count,
+            self.baseline_event_count,
+            self.unknown_count,
+            self.invalid_amount_count,
+            self.queue_lag_seconds,
+            self.dlq_count,
+            self.asia_qr_va_pending_age_seconds,
+            self.asia_refund_shape_b_pending_age_seconds,
+            self.india_non_terminal_age_seconds,
+            self.india_refund_created_age_seconds,
         )
         if any(value < 0 for value in counts):
             raise ValueError("health window counts cannot be negative")
@@ -92,6 +132,13 @@ class HealthWindow:
         object.__setattr__(self, "window_start", start)
         object.__setattr__(self, "window_end", end)
         object.__setattr__(self, "data_as_of", data_as_of)
+        for metric, txn_ids in self.evidence_txn_ids.items():
+            if not isinstance(metric, HealthMetric):
+                raise TypeError("evidence metric must be HealthMetric")
+            if len(txn_ids) > 5 or len(set(txn_ids)) != len(txn_ids):
+                raise ValueError("evidence must contain at most five unique txn_ids")
+            if any(not value.strip() for value in txn_ids):
+                raise ValueError("evidence txn_id cannot be empty")
 
 
 @dataclass(frozen=True, slots=True)
@@ -137,6 +184,13 @@ class RuleConfig:
                 raise ValueError("freshness rules do not use sample/window size")
             if self.threshold < 0:
                 raise ValueError("freshness threshold cannot be negative")
+        else:
+            if self.window_size_minutes not in {1, 5, 15}:
+                raise ValueError("operational rules require a supported window size")
+            if self.minimum_sample is not None:
+                raise ValueError("operational rules do not use minimum_sample")
+            if self.threshold < 0:
+                raise ValueError("operational threshold cannot be negative")
 
 
 @dataclass(frozen=True, slots=True)
@@ -174,6 +228,13 @@ class HealthReason:
     last_window_end: datetime | None
     runbook_ref: str
     data_as_of: datetime | None
+    txn_ids: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if len(self.txn_ids) > 5 or len(set(self.txn_ids)) != len(self.txn_ids):
+            raise ValueError("health reason allows at most five unique txn_ids")
+        if any(not value.strip() for value in self.txn_ids):
+            raise ValueError("health reason txn_id cannot be empty")
 
 
 @dataclass(frozen=True, slots=True)
@@ -221,6 +282,7 @@ class HealthEvaluator:
         rules: Iterable[AlertRule],
         *,
         clock: Callable[[], datetime] = _system_clock,
+        decision_policy: HealthDecisionPolicy | None = None,
     ) -> None:
         self._rules = tuple(rules)
         if not self._rules:
@@ -231,6 +293,7 @@ class HealthEvaluator:
         if len(identities) != len(self._rules):
             raise ValueError("health rule identities must be unique")
         self._clock = clock
+        self._decision_policy = decision_policy or HealthDecisionPolicy()
 
     def evaluate(
         self,
@@ -324,16 +387,18 @@ class HealthEvaluator:
             )
         return replace(state, consecutive_breaches=0, consecutive_recoveries=0)
 
-    @staticmethod
-    def _health_status(evaluations: Iterable[RuleEvaluation]) -> HealthStatus:
+    def _health_status(self, evaluations: Iterable[RuleEvaluation]) -> HealthStatus:
         values = tuple(evaluations)
         breaches = tuple(
             value for value in values if value.status is EvaluationStatus.BREACH
         )
+        breached_metrics = {value.config.metric for value in breaches}
+        # A critical rule is not enough on its own to declare an outage. Rules
+        # with different thresholds over the same metric remain one signal.
         if any(
             value.config.health_impact is HealthImpact.UNHEALTHY
             for value in breaches
-        ):
+        ) and len(breached_metrics) >= self._decision_policy.unhealthy_requires_distinct_metrics:
             return HealthStatus.UNHEALTHY
         if breaches or any(
             value.status is EvaluationStatus.CONFIG_ERROR for value in values

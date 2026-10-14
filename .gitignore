@@ -231,3 +231,7 @@ skills-lock.json
 node_modules/
 test-results/
 playwright-report/
+
+# P1 realtime monitoring documentation
+!docs/huong-dan-hieu-he-thong-paymenthub.md
+!docs/giai-thich-sau-cac-thanh-phan-p1.md

@@ -1,0 +1,18 @@
+services:
+  postgres:
+    ports: !override
+      - "${PAYMENTHUB_W4_POSTGRES_PORT:-15432}:5432"
+
+  mongodb:
+    ports: !reset []
+
+  rabbitmq:
+    ports: !override
+      - "${PAYMENTHUB_W4_RABBITMQ_PORT:-15674}:5672"
+      - "${PAYMENTHUB_W4_RABBITMQ_UI_PORT:-15675}:15672"
+
+  rabbitmq-consumer:
+    restart: "no"
+
+  api:
+    ports: !reset []

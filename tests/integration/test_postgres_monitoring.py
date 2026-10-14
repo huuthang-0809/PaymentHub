@@ -68,6 +68,8 @@ def postgres_url() -> str:
     url = _database_url()
     _reset_and_migrate(url)
     yield url
+    if os.getenv("PAYMENTHUB_KEEP_INTEGRATION_DB") == "1":
+        return
     with psycopg.connect(_psycopg_url(url), autocommit=True) as connection:
         connection.execute("DROP SCHEMA IF EXISTS public CASCADE")
         connection.execute("CREATE SCHEMA public")

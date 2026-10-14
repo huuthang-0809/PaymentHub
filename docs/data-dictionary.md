@@ -546,6 +546,19 @@ Schema chỉ dùng kiểu dựng sẵn của PostgreSQL. Mã có miền đóng d
 - canonical_event: B-tree (region,tenant_id,provider,updated_at DESC) và BRIN updated_at.
 - Run COMPLETED được replay từ dữ liệu đã lưu, không tạo thêm kết quả; concurrent cùng input bị chặn bằng advisory lock. Run lỗi có thể retry trên cùng ID. Provider rows, results và chuyển trạng thái COMPLETED được commit cùng transaction.
 
+### Monitoring Parquet export
+
+`python -m bootstrap.export_monitoring_parquet` xuất bốn dataset API vào
+`tests/generated/parquet`: `window_metrics.parquet`, `provider_health.parquet`,
+`open_alerts.parquet` và `freshness.parquet`. `data-dictionary.json` đi kèm ghi
+source endpoint, số dòng, tên cột, DuckDB type và nullable của từng dataset.
+
+Exporter không xuất canonical `raw`; alerts chỉ gồm trạng thái `OPEN`. Sau khi
+ghi, chính exporter đọc lại mỗi file bằng DuckDB và đối chiếu `count(*)` với số
+dòng API. Nested `reasons`, `evaluations` và `txn_ids` được giữ dưới kiểu
+LIST/STRUCT do DuckDB suy luận từ JSON response. Với dataset rỗng, file chứa cột
+sentinel `empty_dataset BOOLEAN` và zero rows để vẫn là Parquet hợp lệ.
+
 ## 13. Phần chưa hoàn thiện và quy tắc cập nhật
 
 - Cutoff/timezone cho provider rows đã có quy ước tạm. Allowed lateness, system late evidence và tự động đưa staged row vào run kế tiếp chưa triển khai.

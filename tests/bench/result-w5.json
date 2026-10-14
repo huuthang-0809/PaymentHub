@@ -1,0 +1,35 @@
+{
+  "api": {
+    "failures": [],
+    "p95_ms": 288.977,
+    "per_endpoint": {
+      "/_meta/freshness": {
+        "p95_ms": 34.287,
+        "requests": 7
+      },
+      "/alerts": {
+        "p95_ms": 29.595,
+        "requests": 7
+      },
+      "/health/providers": {
+        "p95_ms": 175.866,
+        "requests": 8
+      },
+      "/metrics/windows": {
+        "p95_ms": 498.933,
+        "requests": 8
+      }
+    },
+    "request_count": 30
+  },
+  "benchmark": "p1-w5-api-under-active-rabbitmq-ingest",
+  "generated_at": "2026-10-13T09:54:06.923802Z",
+  "load": {
+    "messages_confirmed": 100,
+    "publish_delay_seconds": 0.02,
+    "requests_while_producer_active": 30,
+    "transport": "RabbitMQ publisher confirms"
+  },
+  "pass": true,
+  "schema_version": 1
+}

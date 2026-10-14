@@ -46,6 +46,7 @@ class ProcessCanonicalEvents:
         events: Iterable[CanonicalEvent],
         *,
         computed_at: datetime,
+        fail_fast: bool = False,
         before_commit: Callable[[], None] | None = None,
         after_commit: Callable[[], None] | None = None,
     ) -> ProcessingOutput:
@@ -68,12 +69,27 @@ class ProcessCanonicalEvents:
                         else:
                             duplicated += 1
                         continue
+                    event_time_late = timing is EventTiming.LATE
+                    arrival_late = self.watermark_policy.classify_arrival(
+                        source_event.event_time, source_event.received_at
+                    )
+                    arrival_lag_seconds = (
+                        max(0, int((source_event.received_at - source_event.event_time).total_seconds()))
+                        if source_event.received_at is not None
+                        else None
+                    )
                     event = replace(
-                        source_event, is_late=timing is EventTiming.LATE
+                        source_event,
+                        is_late=event_time_late or arrival_late,
+                        event_time_late=event_time_late,
+                        arrival_late=arrival_late,
+                        arrival_lag_seconds=arrival_lag_seconds,
                     )
                     was_inserted = unit_of_work.events.insert_once(event)
                 except Exception:
                     failed += 1
+                    if fail_fast:
+                        raise
                     continue
 
                 if not was_inserted:
@@ -81,7 +97,8 @@ class ProcessCanonicalEvents:
                     continue
 
                 inserted += 1
-                if timing is EventTiming.LATE:
+                unit_of_work.record_event_activity(event)
+                if event.is_late:
                     late += 1
                 transaction = event.transaction
                 if transaction.is_deleted or transaction.is_test_data:

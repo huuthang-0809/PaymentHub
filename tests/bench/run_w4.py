@@ -23,7 +23,7 @@ from monitoring.application import ProcessCanonicalEvents
 
 ROOT = Path(__file__).parents[2]
 FIXTURE = ROOT / "tests/fixtures/monitoring/events.jsonl"
-OUTPUT = Path(__file__).with_name("result-w4.json")
+OUTPUT = Path(__file__).with_name("result-w4-replay.json")
 COMPUTED_AT = datetime(2026, 9, 25, 11, 0, tzinfo=UTC)
 
 

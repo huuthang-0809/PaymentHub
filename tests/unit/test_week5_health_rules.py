@@ -24,7 +24,7 @@ from monitoring.domain import (
 )
 from shared_kernel import Region
 
-CONFIG = Path(__file__).parents[2] / "config/health-rules.week5-provisional.json"
+CONFIG = Path(__file__).parents[2] / "config/health-rules.week5-provisional.yaml"
 SCOPE = EvaluationScope(Region.VN, "", "ONEPAY")
 START = datetime(2026, 10, 6, 0, 0, tzinfo=UTC)
 
@@ -48,11 +48,36 @@ def _window(config: RuleConfig, evaluated_at: datetime, *, breach: bool) -> Heal
         failed = int(observed * sample)
         success = sample - failed
         end = evaluated_at - timedelta(seconds=10)
-    else:
+    elif config.metric is HealthMetric.FRESHNESS_LAG_SECONDS:
         success, failed = sample, 0
         lag = int(config.threshold) + 30 if breach else min(30, int(config.threshold))
         end = evaluated_at - timedelta(seconds=lag)
+    else:
+        success, failed = sample, 0
+        end = evaluated_at - timedelta(seconds=10)
     start = end - timedelta(minutes=size)
+    operational = {}
+    if config.metric is HealthMetric.VOLUME_RATIO:
+        operational = {
+            "total_event_count": 10 if breach else 100,
+            "baseline_event_count": 100,
+        }
+    elif config.metric is HealthMetric.DATA_QUALITY_ERROR_COUNT:
+        operational = {"unknown_count": 1 if breach else 0}
+    elif config.metric is HealthMetric.QUEUE_PRESSURE:
+        operational = {"queue_lag_seconds": int(config.threshold) + 1 if breach else 0}
+    else:
+        field_by_metric = {
+            HealthMetric.ASIA_QR_VA_PENDING_OVER_24H: "asia_qr_va_pending_age_seconds",
+            HealthMetric.ASIA_REFUND_SHAPE_B_PENDING: "asia_refund_shape_b_pending_age_seconds",
+            HealthMetric.INDIA_NON_TERMINAL_OVER_AGE: "india_non_terminal_age_seconds",
+            HealthMetric.INDIA_REFUND_CREATED_OVER_AGE: "india_refund_created_age_seconds",
+        }
+        if config.metric in field_by_metric:
+            operational = {
+                field_by_metric[config.metric]: int(config.threshold) + 1 if breach else 0
+            }
+    operational.setdefault("total_event_count", sample)
     return HealthWindow(
         scope=SCOPE,
         window_size_minutes=size,
@@ -62,6 +87,7 @@ def _window(config: RuleConfig, evaluated_at: datetime, *, breach: bool) -> Heal
         success_count=success,
         failed_count=failed,
         data_as_of=end - timedelta(seconds=1),
+        **operational,
     )
 
 
@@ -71,17 +97,25 @@ def _execute(service, source, config, evaluated_at, *, breach):
 
 
 def test_week5_profile_has_nine_unique_versioned_rules_and_runbooks() -> None:
-    configs = JsonRuleConfigRepository(
+    repository = JsonRuleConfigRepository(
         CONFIG, required_profile="WEEK5_PROVISIONAL"
-    ).list_active()
+    )
+    configs = repository.list_active()
     assert len(configs) == 9
     assert len({(item.rule_id, item.rule_version) for item in configs}) == 9
     assert all(item.runbook_ref.startswith("docs/runbooks/") for item in configs)
     assert {item.metric for item in configs} == {
-        HealthMetric.SUCCESS_RATE,
+        HealthMetric.VOLUME_RATIO,
         HealthMetric.FAILURE_RATE,
         HealthMetric.FRESHNESS_LAG_SECONDS,
+        HealthMetric.DATA_QUALITY_ERROR_COUNT,
+        HealthMetric.QUEUE_PRESSURE,
+        HealthMetric.ASIA_QR_VA_PENDING_OVER_24H,
+        HealthMetric.ASIA_REFUND_SHAPE_B_PENDING,
+        HealthMetric.INDIA_NON_TERMINAL_OVER_AGE,
+        HealthMetric.INDIA_REFUND_CREATED_OVER_AGE,
     }
+    assert repository.decision_policy().unhealthy_requires_distinct_metrics == 2
 
 
 def test_all_nine_rules_dedupe_cooldown_and_recover() -> None:
@@ -136,3 +170,28 @@ def test_all_nine_rules_dedupe_cooldown_and_recover() -> None:
         alert = uow.alerts.list_alerts()[0]
         assert alert.status is AlertStatus.RESOLVED
         assert len(notifications.delivered) == 2
+
+
+def test_normal_data_creates_no_alert_transition_or_notification() -> None:
+    configs = JsonRuleConfigRepository(
+        CONFIG, required_profile="WEEK5_PROVISIONAL"
+    ).list_active()
+    for index, config in enumerate(configs):
+        source = InMemoryHealthMetricSource()
+        uow = InMemoryAlertUnitOfWork()
+        notifications = RecordingNotificationPort()
+        service = EvaluateProviderHealth(
+            source,
+            InMemoryRuleConfigRepository((config,)),
+            uow,
+            notifications,
+        )
+
+        output = _execute(
+            service, source, config, START + timedelta(days=index), breach=False
+        )
+
+        assert output.transitions == ()
+        assert uow.alerts.list_alerts() == ()
+        assert notifications.attempts == []
+        assert notifications.delivered == []

@@ -1,119 +1,40 @@
 {
   "contract_status": "AWAITING_TECHNICAL_LEAD_APPROVAL",
   "dataset": {
-    "cases_per_rule": 4,
+    "cases": 36,
     "evaluation_delay_seconds": 60,
-    "negative_cases_per_rule": 2,
-    "positive_cases_per_rule": 2,
+    "negative_cases": 18,
+    "positive_cases": 18,
     "rules": 9,
-    "scheduler_interval_seconds": 300
+    "scheduler_interval_seconds": 300,
+    "source": "tests/fixtures/monitoring/health-alerts/incidents.yaml"
   },
   "limitations": [
-    "Synthetic balanced acceptance fixture; not production prevalence.",
-    "MTTD starts at the beginning of the first breached closed window.",
+    "Labeled synthetic incident timelines; not production prevalence.",
     "Thresholds remain provisional until Technical Lead approval."
   ],
   "overall": {
     "fn": 0,
     "fp": 0,
-    "mttd_seconds": 593.3333333333334,
+    "mttd_seconds": 460.0,
     "precision": 1.0,
     "recall": 1.0,
+    "targets_met": true,
     "tn": 18,
     "tp": 18
   },
   "per_rule": [
-    {
-      "fn": 0,
-      "fp": 0,
-      "mttd_seconds": 660,
-      "precision": 1.0,
-      "recall": 1.0,
-      "rule_id": "W5_LOW_SUCCESS_CRITICAL_V1",
-      "tn": 2,
-      "tp": 2
-    },
-    {
-      "fn": 0,
-      "fp": 0,
-      "mttd_seconds": 960,
-      "precision": 1.0,
-      "recall": 1.0,
-      "rule_id": "W5_LOW_SUCCESS_WARNING_V1",
-      "tn": 2,
-      "tp": 2
-    },
-    {
-      "fn": 0,
-      "fp": 0,
-      "mttd_seconds": 360,
-      "precision": 1.0,
-      "recall": 1.0,
-      "rule_id": "W5_LOW_SUCCESS_SEVERE_V1",
-      "tn": 2,
-      "tp": 2
-    },
-    {
-      "fn": 0,
-      "fp": 0,
-      "mttd_seconds": 660,
-      "precision": 1.0,
-      "recall": 1.0,
-      "rule_id": "W5_HIGH_FAILURE_WARNING_V1",
-      "tn": 2,
-      "tp": 2
-    },
-    {
-      "fn": 0,
-      "fp": 0,
-      "mttd_seconds": 360,
-      "precision": 1.0,
-      "recall": 1.0,
-      "rule_id": "W5_HIGH_FAILURE_CRITICAL_V1",
-      "tn": 2,
-      "tp": 2
-    },
-    {
-      "fn": 0,
-      "fp": 0,
-      "mttd_seconds": 960,
-      "precision": 1.0,
-      "recall": 1.0,
-      "rule_id": "W5_HIGH_FAILURE_ELEVATED_V1",
-      "tn": 2,
-      "tp": 2
-    },
-    {
-      "fn": 0,
-      "fp": 0,
-      "mttd_seconds": 660,
-      "precision": 1.0,
-      "recall": 1.0,
-      "rule_id": "W5_STALE_FAST_V1",
-      "tn": 2,
-      "tp": 2
-    },
-    {
-      "fn": 0,
-      "fp": 0,
-      "mttd_seconds": 360,
-      "precision": 1.0,
-      "recall": 1.0,
-      "rule_id": "W5_STALE_STANDARD_V1",
-      "tn": 2,
-      "tp": 2
-    },
-    {
-      "fn": 0,
-      "fp": 0,
-      "mttd_seconds": 360,
-      "precision": 1.0,
-      "recall": 1.0,
-      "rule_id": "W5_STALE_CRITICAL_V1",
-      "tn": 2,
-      "tp": 2
-    }
+    {"fn": 0, "fp": 0, "mttd_seconds": 660.0, "precision": 1.0, "recall": 1.0, "rule_id": "W5_VOLUME_DROP_V1", "tn": 2, "tp": 2},
+    {"fn": 0, "fp": 0, "mttd_seconds": 660.0, "precision": 1.0, "recall": 1.0, "rule_id": "W5_FAILURE_RATE_V1", "tn": 2, "tp": 2},
+    {"fn": 0, "fp": 0, "mttd_seconds": 360.0, "precision": 1.0, "recall": 1.0, "rule_id": "W5_STALE_DATA_V1", "tn": 2, "tp": 2},
+    {"fn": 0, "fp": 0, "mttd_seconds": 360.0, "precision": 1.0, "recall": 1.0, "rule_id": "W5_DATA_QUALITY_V1", "tn": 2, "tp": 2},
+    {"fn": 0, "fp": 0, "mttd_seconds": 660.0, "precision": 1.0, "recall": 1.0, "rule_id": "W5_QUEUE_PRESSURE_V1", "tn": 2, "tp": 2},
+    {"fn": 0, "fp": 0, "mttd_seconds": 360.0, "precision": 1.0, "recall": 1.0, "rule_id": "W5_ASIA_QR_VA_PENDING_24H_V1", "tn": 2, "tp": 2},
+    {"fn": 0, "fp": 0, "mttd_seconds": 360.0, "precision": 1.0, "recall": 1.0, "rule_id": "W5_ASIA_REFUND_SHAPE_B_PENDING_V1", "tn": 2, "tp": 2},
+    {"fn": 0, "fp": 0, "mttd_seconds": 360.0, "precision": 1.0, "recall": 1.0, "rule_id": "W5_INDIA_NON_TERMINAL_AGE_V1", "tn": 2, "tp": 2},
+    {"fn": 0, "fp": 0, "mttd_seconds": 360.0, "precision": 1.0, "recall": 1.0, "rule_id": "W5_INDIA_REFUND_CREATED_AGE_V1", "tn": 2, "tp": 2}
   ],
   "profile": "WEEK5_PROVISIONAL",
-  "schema_version": 1
+  "schema_version": 2,
+  "targets": {"precision_min": 0.7, "recall_min": 0.8}
 }
