@@ -136,7 +136,8 @@ def test_provider_reference_is_only_used_for_asia() -> None:
     }
 
 
-def test_exact_index_preserves_provider_order() -> None:
+@pytest.mark.parametrize("candidate_count", [2, 3, 10, 100])
+def test_exact_index_preserves_provider_order(candidate_count: int) -> None:
     systems = [
         system_transaction(
             txn_id=f"system-{index}",
@@ -144,7 +145,7 @@ def test_exact_index_preserves_provider_order() -> None:
             provider_ref_id=f"system-reference-{index}",
             merchant_ref="shared-merchant-reference",
         )
-        for index in range(2)
+        for index in range(candidate_count)
     ]
     providers = [
         provider_transaction(
@@ -153,13 +154,34 @@ def test_exact_index_preserves_provider_order() -> None:
             merchant_ref="shared-merchant-reference",
             source_row_number=index + 10,
         )
-        for index in range(2)
+        for index in range(candidate_count)
     ]
 
     results = MatchingEngine().match("run-1", providers, systems)
 
-    assert [result.source_row_number for result in results] == [10, 11]
+    assert [result.source_row_number for result in results] == list(range(10, 10 + candidate_count))
     assert all(result.result_type is ReconResultType.MATCHED for result in results)
+
+
+def test_currency_mismatch_consumes_earliest_candidate_across_currency_buckets() -> None:
+    systems = [
+        system_transaction(
+            txn_id=f"system-{index}", provider_txn_id=f"system-provider-{index}",
+            merchant_ref="shared-reference",
+        ) for index in range(3)
+    ]
+    providers = [
+        provider_transaction(
+            provider_txn_id=f"provider-{index}", currency=currency,
+            merchant_ref="shared-reference", source_row_number=10 + index,
+        ) for index, currency in enumerate(["USD", "INR", "USD"])
+    ]
+
+    results = MatchingEngine().match("run-1", providers, systems)
+
+    assert [result.source_row_number for result in results] == [10, 11, 12]
+    assert all(result.result_type is ReconResultType.CURRENCY_MISMATCH for result in results)
+    assert all(result.delta_amount is None for result in results)
 
 
 def test_fuzzy_index_preserves_first_provider_for_equal_time_distance() -> None:
@@ -193,3 +215,38 @@ def test_fuzzy_index_preserves_first_provider_for_equal_time_distance() -> None:
         if result.result_type is ReconResultType.FUZZY_MATCHED
     )
     assert fuzzy.source_row_number == 20
+
+
+@pytest.mark.parametrize("mode", ["exact", "fuzzy"])
+@pytest.mark.parametrize("candidate_index", [0, 2])
+def test_provider_is_consumed_once_with_sparse_matched_flags(mode, candidate_index):
+    systems = [
+        system_transaction(
+            txn_id=f"system-{index}",
+            provider_txn_id="shared-provider" if mode == "exact" else f"system-provider-{index}",
+            merchant_ref=f"system-reference-{index}", merchant_id="shared-merchant",
+        ) for index in range(2)
+    ]
+    providers = [
+        provider_transaction(
+            provider_txn_id="shared-provider" if index == candidate_index else f"provider-{index}",
+            merchant_ref=f"provider-reference-{index}",
+            merchant_id="shared-merchant" if index == candidate_index else "other-merchant",
+            source_row_number=10 + index,
+        ) for index in range(3)
+    ]
+
+    results = MatchingEngine().match("run-1", providers, systems)
+
+    paired = [row for row in results if row.system_txn_id and row.source_row_number]
+    assert len(paired) == 1
+    assert paired[0].source_row_number == 10 + candidate_index
+    assert paired[0].system_txn_id == "system-0"
+    expected = ReconResultType.MATCHED if mode == "exact" else ReconResultType.FUZZY_MATCHED
+    assert paired[0].result_type is expected
+    assert sum(row.result_type is ReconResultType.MISSING_IN_PROVIDER for row in results) == 1
+    assert sum(row.result_type is ReconResultType.MISSING_IN_SYSTEM for row in results) == 2
+
+
+def test_matching_empty_inputs() -> None:
+    assert MatchingEngine().match("run-1", [], []) == []

@@ -1,4 +1,5 @@
 from collections import Counter
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 from datetime import date, time
 import logging
@@ -165,11 +166,10 @@ class RunMatching:
                     )
                     raise InvalidProviderStatement(details) #Raise exception with detail issues
 
-                parsed_provider_rows = list(report.rows)
                 out_of_scope = next(
                     (
                         transaction
-                        for transaction in parsed_provider_rows
+                        for transaction in report.rows
                         if transaction.region is not region
                         or transaction.tenant_id != tenant_id
                         or transaction.provider != provider
@@ -183,7 +183,7 @@ class RunMatching:
                     )
 
                 current_provider_rows, persisted_provider_rows = classify_provider_rows(
-                    parsed_provider_rows, period
+                    report.rows, period
                 )
                 carried_rows = self._dependency(
                     lambda: self.repository.late_provider_transactions(
@@ -201,7 +201,7 @@ class RunMatching:
                     provider=provider,
                 )
                 provider_rows = _merge_provider_rows(
-                    current_provider_rows, list(carried_rows)
+                    current_provider_rows, carried_rows
                 )
                 persisted_provider_rows.extend(
                     provider_rows[len(current_provider_rows):]
@@ -320,7 +320,7 @@ def _provider_identity(transaction: ProviderTransaction) -> tuple | None:
 
 def _merge_provider_rows(
     current_rows: list[ProviderTransaction],
-    carried_rows: list[ProviderTransaction],
+    carried_rows: Iterable[ProviderTransaction],
 ) -> list[ProviderTransaction]:
     merged = list(current_rows)
     origins = {(row.source_file, row.source_row_number) for row in current_rows}

@@ -32,21 +32,30 @@ RULES = (
 )
 
 
-def evaluate_rules(results: list[Mapping[str, object]]) -> list[dict]:
-    """Return exactly one PASSED or FAILED finding for each configured rule."""
+DQ_RESULT_GROUPS_SQL = """
+    SELECT result_type, COUNT(*) AS row_count,
+           ARRAY_AGG(result_key ORDER BY result_key)
+               FILTER (WHERE result_type = ANY(%s::text[])) AS affected_keys
+    FROM recon_result
+    WHERE business_date = %s AND run_id = %s
+    GROUP BY result_type
+"""
+
+
+def evaluate_rules(groups: list[Mapping[str, object]]) -> list[dict]:
+    """Build all rule findings from SQL counts and ordered affected-key arrays."""
+    # Include healthy/non-DQ classifications in the denominator as before.
+    evaluated_count = sum(int(group["row_count"]) for group in groups)
+    keys_by_type = {group["result_type"]: group["affected_keys"] for group in groups}
     findings = []
     for rule in RULES:
-        affected = [
-            int(result["result_key"])
-            for result in results
-            if result["result_type"] == rule.result_type
-        ]
+        affected = keys_by_type.get(rule.result_type) or []
         findings.append({
             "rule_code": rule.code,
             "rule_version": rule.version,
             "severity": rule.severity,
             "status": "FAILED" if affected else "PASSED",
-            "evaluated_count": len(results),
+            "evaluated_count": evaluated_count,
             "affected_count": len(affected),
             "affected_result_keys": affected,
         })
@@ -76,13 +85,8 @@ class PostgreDataQualityStore:
             if run is None or run["status"] != "COMPLETED":
                 return
             cursor.execute(
-                """
-                SELECT result_key, result_type
-                FROM recon_result
-                WHERE business_date = %s AND run_id = %s
-                ORDER BY result_key
-                """,
-                (run["business_date"], run_id),
+                DQ_RESULT_GROUPS_SQL,
+                ([rule.result_type for rule in RULES], run["business_date"], run_id),
             )
             findings = evaluate_rules(cursor.fetchall())
             cursor.executemany(

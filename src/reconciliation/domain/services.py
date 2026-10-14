@@ -1,5 +1,6 @@
 from bisect import bisect_left, bisect_right
-from collections import defaultdict, deque
+from collections import defaultdict
+from collections.abc import Iterable, Iterator
 from dataclasses import replace
 from datetime import timedelta
 
@@ -23,17 +24,16 @@ class MatchingEngine:
         system_candidates = []
 
         unmatched_sys, system_duplicates = self._deduplicate_system(system_txns)
-        normalized_provider_txns = [
-            self._normalize_provider_txn(txn) for txn in provider_txns
-        ]
         unmatched_prov, provider_duplicates = self._deduplicate_provider(
-            normalized_provider_txns
+            self._normalize_provider_txn(txn) for txn in provider_txns
         )
 
         for txn in system_duplicates:
             results.append(self._build_sys_result(run_id, txn, ReconResultType.DUPLICATE))
+        del system_duplicates
         for txn in provider_duplicates:
             results.append(self._build_prov_result(run_id, txn, ReconResultType.DUPLICATE))
+        del provider_duplicates
 
         for txn in unmatched_sys:
             if not txn.is_reconcilable or txn.txn_type in {
@@ -53,6 +53,7 @@ class MatchingEngine:
                 system_candidates.append(txn)
 
         unmatched_sys = system_candidates
+        del system_candidates
 
         # Steps 1–3: exact identifiers within the full currency scope.
         exact_keys = ("provider_txn_id", "provider_ref_id", "merchant_ref")
@@ -62,12 +63,14 @@ class MatchingEngine:
                 asia_only=key_name == "provider_ref_id",
             )
             results.extend(self._evaluate_pairs(run_id, pairs, False, key_name))
+            del pairs
 
         # Step 4: fuzzy match
         pairs, unmatched_sys, unmatched_prov = self._fuzzy_match(
             unmatched_sys, unmatched_prov
         )
         results.extend(self._evaluate_pairs(run_id, pairs, is_fuzzy=True))
+        del pairs
 
         # Diagnose currency differences only after all full-scope matching.
         for key_name in exact_keys:
@@ -77,6 +80,7 @@ class MatchingEngine:
                 currency_mismatch=True,
             )
             results.extend(self._evaluate_pairs(run_id, pairs, False, key_name))
+            del pairs
 
         for txn in unmatched_sys:
             results.append(
@@ -126,8 +130,8 @@ class MatchingEngine:
         unmatched_sys = []
 
         if currency_mismatch:
-            provider_index: dict[tuple, dict[str, deque[int]]] = defaultdict( # if tuple key not exist -> call lambda function inside
-                lambda: defaultdict(deque) # if key currency not exist -> return an empty deque
+            provider_index: dict[tuple, dict[str, list[int]]] = defaultdict( # if tuple key not exist -> call lambda function inside
+                lambda: defaultdict(list) # Missing currencies start with an empty candidate list.
             )
             for index, provider_txn in enumerate(provider_txns):
                 identifier = getattr(provider_txn, key_name)
@@ -137,13 +141,13 @@ class MatchingEngine:
                         (self._identity_scope(provider_txn), identifier)
                     ][currency].append(index)
         else:
-            exact_index: dict[tuple, deque[int]] = defaultdict(deque)
+            exact_index: dict[tuple, list[int]] = defaultdict(list)
             for index, provider_txn in enumerate(provider_txns):
                 identifier = getattr(provider_txn, key_name)
                 if identifier:
                     exact_index[(self._scope(provider_txn), identifier)].append(index)
 
-        matched_provider_indexes: set[int] = set()
+        matched_provider_indexes = bytearray(len(provider_txns))
 
         for system_txn in system_txns:
             if asia_only and system_txn.region != Region.ASIA:
@@ -164,7 +168,7 @@ class MatchingEngine:
                 for currency, candidates in currency_queues.items():
                     if (
                         currency != system_currency
-                        and candidates # deque is not empty
+                        and candidates # candidate list is not empty
                         and (
                             match_index is None
                             or candidates[0] < match_index # get first candidate with smallest index
@@ -175,22 +179,22 @@ class MatchingEngine:
                     provider_currency = self._scope(
                         provider_txns[match_index]
                     )[3]
-                    currency_queues[provider_currency].popleft()
+                    currency_queues[provider_currency].pop(0)
             else:
                 candidates = exact_index.get((self._scope(system_txn), key))
                 if candidates:
-                    match_index = candidates.popleft()
+                    match_index = candidates.pop(0)
 
             if match_index is None:
                 unmatched_sys.append(system_txn)
             else:
-                matched_provider_indexes.add(match_index)
+                matched_provider_indexes[match_index] = 1
                 pairs.append((system_txn, provider_txns[match_index]))
 
         unmatched_prov = [
             provider_txn
             for index, provider_txn in enumerate(provider_txns)
-            if index not in matched_provider_indexes
+            if not matched_provider_indexes[index]
         ]
         return pairs, unmatched_sys, unmatched_prov
 
@@ -214,7 +218,7 @@ class MatchingEngine:
         for candidates in provider_index.values():
             candidates.sort()
 
-        matched_provider_indexes: set[int] = set()
+        matched_provider_indexes = bytearray(len(provider_txns))
         window = timedelta(seconds=self.time_window_second)
 
         for system_txn in system_txns:
@@ -239,7 +243,7 @@ class MatchingEngine:
             smallest_rank = None
             for candidate_position in range(lower_bound, upper_bound):
                 _, index = candidates[candidate_position]
-                if index in matched_provider_indexes:
+                if matched_provider_indexes[index]:
                     continue
                 provider_txn = provider_txns[index]
                 if not self._is_fuzzy_match(system_txn, provider_txn):
@@ -255,13 +259,13 @@ class MatchingEngine:
             if match_index is None:
                 unmatched_sys.append(system_txn)
                 continue
-            matched_provider_indexes.add(match_index)
+            matched_provider_indexes[match_index] = 1
             pairs.append((system_txn, provider_txns[match_index]))
 
         unmatched_prov = [
             provider_txn
             for index, provider_txn in enumerate(provider_txns)
-            if index not in matched_provider_indexes
+            if not matched_provider_indexes[index]
         ]
         return pairs, unmatched_sys, unmatched_prov
 
@@ -288,8 +292,7 @@ class MatchingEngine:
         pairs: list[tuple[CanonicalTransaction, ProviderTransaction]],
         is_fuzzy: bool,
         matched_by: str = "composite",
-    ) -> list[ReconResult]:
-        results = []
+    ) -> Iterator[ReconResult]:
         for system_txn, provider_txn in pairs:
             same_currency = system_txn.currency == provider_txn.currency
             if not same_currency:
@@ -309,31 +312,28 @@ class MatchingEngine:
             ):
                 delta = system_txn.amount_minor - provider_txn.amount_minor
 
-            results.append(
-                ReconResult(
-                    run_id=run_id,
-                    result_type=result_type,
-                    region=system_txn.region,
-                    tenant_id=system_txn.tenant_id,
-                    provider=system_txn.provider,
-                    txn_type=system_txn.txn_type,
-                    system_txn_id=system_txn.txn_id,
-                    system_provider_txn_id=system_txn.provider_txn_id,
-                    system_status=system_txn.status,
-                    system_amount_minor=system_txn.amount_minor,
-                    system_currency=system_txn.currency,
-                    refund_of=system_txn.refund_of,
-                    refunded_amount_minor=system_txn.refunded_amount_minor,
-                    provider_txn_id=provider_txn.provider_txn_id,
-                    provider_amount_minor=provider_txn.amount_minor,
-                    provider_currency=provider_txn.currency,
-                    source_file=provider_txn.source_file,
-                    source_row_number=provider_txn.source_row_number,
-                    delta_amount=delta,
-                    reason=f"{result_type.value}: matched by {matched_by}",
-                )
+            yield ReconResult(
+                run_id=run_id,
+                result_type=result_type,
+                region=system_txn.region,
+                tenant_id=system_txn.tenant_id,
+                provider=system_txn.provider,
+                txn_type=system_txn.txn_type,
+                system_txn_id=system_txn.txn_id,
+                system_provider_txn_id=system_txn.provider_txn_id,
+                system_status=system_txn.status,
+                system_amount_minor=system_txn.amount_minor,
+                system_currency=system_txn.currency,
+                refund_of=system_txn.refund_of,
+                refunded_amount_minor=system_txn.refunded_amount_minor,
+                provider_txn_id=provider_txn.provider_txn_id,
+                provider_amount_minor=provider_txn.amount_minor,
+                provider_currency=provider_txn.currency,
+                source_file=provider_txn.source_file,
+                source_row_number=provider_txn.source_row_number,
+                delta_amount=delta,
+                reason=f"{result_type.value}: matched by {matched_by}",
             )
-        return results
 
     @staticmethod
     def _deduplicate_system(
@@ -352,7 +352,7 @@ class MatchingEngine:
 
     def _deduplicate_provider(
         self,
-        txns: list[ProviderTransaction],
+        txns: Iterable[ProviderTransaction],
     ) -> tuple[list[ProviderTransaction], list[ProviderTransaction]]:
         seen = set()
         clean = []

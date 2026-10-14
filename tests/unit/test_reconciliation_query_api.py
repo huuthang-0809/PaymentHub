@@ -238,6 +238,22 @@ def test_delete_run_returns_no_content_and_maps_errors(setup_api):
         ).status_code == expected_status
 
 
+def test_delete_run_can_return_json_confirmation(setup_api):
+    client, run_id, _ = setup_api
+    deleted = []
+    client.app.state.delete_reconciliation_run = lambda run_id: deleted.append(run_id)
+
+    response = client.delete(
+        f'/reconciliation-runs/{run_id}',
+        headers={'Prefer': 'return=representation'},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {'run_id': str(run_id), 'deleted': True}
+    assert response.headers['Preference-Applied'] == 'return=representation'
+    assert deleted == [run_id]
+
+
 def test_empty_exports_have_headers_and_schema():
     from reconciliation.adapters.report import export_report, COLUMNS
     csv_content, _ = export_report([], 'csv', datetime.now(UTC))

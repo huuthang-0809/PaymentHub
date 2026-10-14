@@ -1,3 +1,4 @@
+from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -42,7 +43,7 @@ def resolve_business_period(
 
 
 def classify_provider_rows(
-    rows: list[ProviderTransaction],
+    rows: Iterable[ProviderTransaction],
     period: BusinessPeriod,
 ) -> tuple[list[ProviderTransaction], list[ProviderTransaction]]:
     """Return eligible rows and the complete persisted audit input."""
@@ -51,10 +52,11 @@ def classify_provider_rows(
     persisted: list[ProviderTransaction] = []
     for row in rows:
         in_period = period.start_utc <= row.transaction_time < period.end_utc
-        if row.transaction_time >= period.end_utc:
-            classified = replace(row, late_arriving=True) #ProviderTransaction is a frozen data class -> use replace
-        else:
-            classified = replace(row, late_arriving=False)
+        late_arriving = row.transaction_time >= period.end_utc
+        classified = (
+            row if row.late_arriving == late_arriving
+            else replace(row, late_arriving=late_arriving)
+        )
         persisted.append(classified)
         if in_period:
             eligible.append(classified)
