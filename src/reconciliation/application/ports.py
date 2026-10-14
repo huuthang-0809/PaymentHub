@@ -199,6 +199,10 @@ class ExportFailed(Exception):
 
 
 class ReconQuery(Protocol):
+    def analytics_rows(self, *, from_date: date, to_date: date,
+                       region: str, tenant_id: str | None = None,
+                       provider: str | None = None) -> list[dict]: ...
+
     def runs(self, *, run_id: UUID | None = None, region: str | None = None,
              tenant_id: str | None = None,
              provider: str | None = None, business_date: date | None = None,

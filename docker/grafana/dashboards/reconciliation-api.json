@@ -1636,11 +1636,9 @@
       }
     ]
   },
-  "time": {
-    "from": "now-7d",
-    "to": "now"
+  "timepicker": {
+    "hidden": true
   },
-  "timepicker": {},
   "timezone": "browser",
   "title": "Reconciliation · Run Detail",
   "uid": "paymenthub-reconciliation-api",

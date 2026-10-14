@@ -139,6 +139,23 @@ def list_reconciliation_runs(
     ))
 
 
+@router.get('/analytics')
+def get_reconciliation_analytics(
+    request: Request,
+    from_date: date = Query(alias='from'),
+    to_date: date = Query(alias='to'),
+    group_by: Literal['day', 'week', 'month', 'none'] = Query('day', alias='groupBy'),
+    region: Region = Query(),
+    tenant_id: str | None = None,
+    provider: str | None = None,
+):
+    return jsonable_encoder(_query(
+        request.app.state.query_reconciliation.analytics,
+        from_date=from_date, to_date=to_date, group_by=group_by,
+        region=region, tenant_id=tenant_id, provider=provider,
+    ))
+
+
 @router.get('/{run_id}/summary')
 def get_reconciliation_summary(request: Request, run_id: UUID, include_refund_checks: bool = True):
     parameters = {} if include_refund_checks else {'include_refund_checks': False}
