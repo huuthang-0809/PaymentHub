@@ -58,8 +58,37 @@ class QueryReconciliation:
             raise RunNotCompleted("Run is not completed")
         return snapshot
 
-    def summary(self, run_id):
-        return summary_view(self.snapshot(run_id, include_results=False))
+    def summary(self, run_id, include_refund_checks=True):
+        if include_refund_checks:
+            return summary_view(self.snapshot(run_id, include_results=False))
+        snapshot = self.reader.snapshot(run_id, include_results=False, include_refund_checks=False)
+        if snapshot is None:
+            raise RunNotFound('Run not found')
+        return summary_view(snapshot)
+
+    def refund_checks(self, run_id, *, limit=50, cursor=None):
+        scope = ['refund-checks', str(run_id)]
+        cursor_error = None
+        try:
+            after = decode_cursor(cursor, scope)
+            if after is not None and (not after.isascii() or not after.isdigit()
+                                      or not 1 <= int(after) <= 2_147_483_647):
+                raise ValueError('Invalid cursor for this query')
+            after = int(after) if after else 0
+        except ValueError as error:
+            cursor_error, after = error, 0
+        snapshot = self.reader.refund_checks_page(
+            run_id, after=after, fetch_limit=0 if cursor_error else limit + 1)
+        if snapshot is None:
+            raise RunNotFound('Run not found')
+        metadata, rows = snapshot
+        if metadata['status'] != 'COMPLETED':
+            raise RunNotCompleted('Run is not completed')
+        if cursor_error:
+            raise cursor_error
+        page = rows[:limit]
+        return dict(items=page, next_cursor=encode_cursor(scope, str(page[-1]['check_key']))
+                    if len(rows) > limit else None, meta={'data_as_of': metadata['finished_at']})
 
     def runs(self, *, run_id=None, region=None, tenant_id=None, provider=None,
              business_date=None, status=None, limit=50, cursor=None, sort='run_id'):

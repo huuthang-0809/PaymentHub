@@ -1,6 +1,7 @@
 """Evaluate and expose simple data-quality rules for completed runs."""
 
 from dataclasses import dataclass
+import json
 from datetime import UTC, date, datetime
 from typing import Literal, Mapping
 from uuid import UUID
@@ -11,6 +12,7 @@ from psycopg import Error as DatabaseError
 from psycopg.rows import dict_row
 
 from reconciliation.application.ports import QueryUnavailable
+from reconciliation.application.query import decode_cursor, encode_cursor
 from shared_kernel import Region
 
 
@@ -119,6 +121,56 @@ class PooledDataQualityQuery:
     def __init__(self, pool) -> None:
         self.pool = pool
 
+    def page(self, *, limit=100, cursor=None, affected_keys_limit=20, **filters) -> dict:
+        fields = ('run_id', 'business_date', 'region', 'tenant_id', 'provider',
+                  'status', 'severity', 'rule_code')
+        scope = ['dq-page', *[str(filters.get(field)) for field in fields], str(affected_keys_limit)]
+        after_value = decode_cursor(cursor, scope)
+        after = None
+        as_of = datetime.now(UTC)
+        if after_value is not None:
+            try:
+                payload = json.loads(after_value)
+                as_of = datetime.fromisoformat(payload['as_of'])
+                after = (date.fromisoformat(payload['date']), datetime.fromisoformat(payload['evaluated_at']),
+                         UUID(payload['run_id']), payload['rule_code'], payload['rule_version'])
+                if (as_of.tzinfo is None or after[1].tzinfo is None
+                    or not isinstance(after[3], str) or not 1 <= len(after[3]) <= 64
+                    or type(after[4]) is not int or not 1 <= after[4] <= 2_147_483_647):
+                    raise ValueError
+            except (ValueError, KeyError, TypeError) as error:
+                raise ValueError('Invalid cursor for this query') from error
+        clauses, values = ['evaluated_at <= %s'], [as_of]
+        for field in fields:
+            if filters.get(field) is not None:
+                clauses.append(f'{field} = %s')
+                values.append(filters[field])
+        if after:
+            clauses.append('(business_date, evaluated_at, run_id, rule_code, rule_version) < (%s, %s, %s, %s, %s)')
+            values.extend(after)
+        try:
+            with self.pool.connection() as connection, connection.cursor(row_factory=dict_row) as db:
+                db.execute(
+                    'SELECT business_date, run_id, region, tenant_id, provider, rule_code, rule_version, '
+                    'severity, status, evaluated_count, affected_count, '
+                    'affected_result_keys[1:%s] AS affected_result_keys, evaluated_at '
+                    'FROM dq_daily WHERE ' + ' AND '.join(clauses) +
+                    ' ORDER BY business_date DESC, evaluated_at DESC, run_id DESC, rule_code DESC, rule_version DESC LIMIT %s',
+                    [affected_keys_limit, *values, limit + 1])
+                rows = db.fetchall()
+        except DatabaseError as error:
+            raise QueryUnavailable('QUERY_UNAVAILABLE') from error
+        page = rows[:limit]
+        next_cursor = None
+        if len(rows) > limit:
+            last = page[-1]
+            next_cursor = encode_cursor(scope, json.dumps({
+                'as_of': as_of.isoformat(), 'date': last['business_date'].isoformat(),
+                'evaluated_at': last['evaluated_at'].isoformat(), 'run_id': str(last['run_id']),
+                'rule_code': last['rule_code'], 'rule_version': last['rule_version'],
+            }))
+        return {'items': page, 'next_cursor': next_cursor, 'meta': {'data_as_of': as_of}}
+
     def list(self, **filters) -> list[dict]:
         clauses = []
         values = []
@@ -156,6 +208,7 @@ router = APIRouter(prefix="/internal", tags=["internal"])
 
 
 @router.get("/data-quality")
+@router.get("/data-quality/page")
 def get_data_quality(
     request: Request,
     run_id: UUID | None = None,
@@ -167,9 +220,11 @@ def get_data_quality(
     severity: Literal["WARNING", "CRITICAL"] | None = None,
     rule_code: str | None = None,
     limit: int = Query(100, ge=1, le=500),
+    cursor: str | None = None,
+    affected_keys_limit: int = Query(20, ge=1, le=100),
 ):
     try:
-        items = request.app.state.data_quality.list(
+        filters = dict(
             run_id=run_id,
             business_date=business_date,
             region=region.value if region else None,
@@ -180,6 +235,10 @@ def get_data_quality(
             rule_code=rule_code.strip().upper() if rule_code else None,
             limit=limit,
         )
+        if request.url.path.endswith('/page'):
+            return jsonable_encoder(request.app.state.data_quality.page(
+                **filters, cursor=cursor, affected_keys_limit=affected_keys_limit))
+        items = request.app.state.data_quality.list(**filters)
         # jsonable_encoder converts UUID, date and datetime values for JSON.
         return jsonable_encoder({
             "items": items,
@@ -188,3 +247,5 @@ def get_data_quality(
     except QueryUnavailable as error:
         # HTTPException hides private database details from the API response.
         raise HTTPException(503, "QUERY_UNAVAILABLE") from error
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from error

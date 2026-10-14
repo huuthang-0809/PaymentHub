@@ -1,0 +1,27 @@
+{
+  "$schema": "https://grafana.com/schemas/plugin/v2.json",
+  "type": "panel",
+  "id": "paymenthub-evidence-panel",
+  "name": "Reconciliation cursor table",
+  "skipDataQuery": true,
+  "info": {
+    "author": {
+      "name": "PaymentHub"
+    },
+    "description": "Grafana tables with on-demand cursor pagination for evidence, refund checks, and daily data quality.",
+    "keywords": [
+      "table",
+      "reconciliation"
+    ],
+    "logos": {
+      "small": "img/logo.svg",
+      "large": "img/logo.svg"
+    },
+    "version": "0.2.0",
+    "updated": "2026-10-12"
+  },
+  "dependencies": {
+    "grafanaDependency": ">=13.1.6 <13.2.0",
+    "plugins": []
+  }
+}

@@ -10,9 +10,9 @@ Mở `/d/paymenthub-reconciliation` trên Grafana.
 - Bấm Run ID để mở dashboard chi tiết. Link cũng có trên bảng DQ và run gần nhất của freshness.
 - Alert lấy từ Prometheus, giới hạn ba rule reconciliation hiện có.
 - Freshness đọc `/_meta/freshness`: trạng thái, lý do, lịch dự kiến, SLA, số lần lỗi liên tiếp và last success. API cần cấu hình `RECON_SCHEDULES_JSON`; bảng rỗng không có nghĩa mọi scope đều healthy.
-- Daily Data Quality đọc `/internal/data-quality?limit=500`: năm rule cho mỗi run, PASSED/FAILED, severity, số dòng bị ảnh hưởng và result keys.
+- Daily Data Quality đọc `/internal/data-quality/page`: năm rule cho mỗi run, PASSED/FAILED, severity, số dòng bị ảnh hưởng và 20 result key mẫu. Mặc định 100 finding/trang; Next/Previous tải tiếp bằng cursor, không còn giới hạn 500 finding.
 
-Các bảng API không chịu bộ lọc thời gian của Grafana. Run list giới hạn 50 trang × 200 run, sắp xếp Started trong dữ liệu đã tải; API hiện phân trang theo UUID, vì vậy khi vượt giới hạn không bảo đảm đây là 10.000 run mới nhất. DQ chỉ hiển thị 500 finding gần nhất theo business date, không đại diện toàn bộ lịch sử. Có thể lọc các cột trong bảng để điều tra tập dữ liệu đã tải.
+Các bảng API không chịu bộ lọc thời gian của Grafana. Run list giới hạn 50 trang × 200 run, sắp xếp Started trong dữ liệu đã tải; API hiện phân trang theo UUID, vì vậy khi vượt giới hạn không bảo đảm đây là 10.000 run mới nhất. DQ phân trang theo business date và evaluated_at giảm dần, dùng run/rule/version để phân biệt khi trùng thời gian. Cursor giữ mốc data_as_of của trang đầu để loại các đánh giá mới trong lúc xem tiếp. Refresh trang đầu để xem finding mới. Lọc/sort cột chỉ áp dụng trang đang tải. DQ hiển thị đầy đủ affected_count nhưng chỉ lấy 20 affected_result_keys đầu; bấm Run ID để điều tra toàn bộ evidence.
 
 Freshness đánh giá theo thời gian thực của API. Dữ liệu mô phỏng ngày cũ có thể cho MISSING ở ngày hiện tại. `Seconds past SLA` là tuổi của deadline do API trả về, cần đọc cùng trạng thái/reason, không tự xem là độ trễ hoàn tất của một run đã COMPLETED.
 
@@ -24,7 +24,36 @@ Giữ các mục 2–4 của dashboard cũ: run overview, input volume, outcome 
 
 Run ID là textbox đồng bộ URL, nên link trực tiếp vẫn mở được run không nằm trong trang danh sách hiện tại. Có thể dán UUID khác vào ô này. Với run chưa hoàn tất, summary chỉ có metadata; result/report chỉ sẵn sàng sau COMPLETED.
 
-Đặt `Report API URL` thành địa chỉ API truy cập được từ trình duyệt khi chạy ngoài localhost. Export tải toàn bộ run; bảng evidence có giới hạn 10.000 dòng và bộ lọc Outcome.
+Đặt `Report API URL` thành địa chỉ API truy cập được từ trình duyệt khi chạy ngoài localhost. Export tải toàn bộ run.
+
+Bảng **Transaction evidence** dùng panel `paymenthub-evidence-panel`, tái sử dụng
+component `Table` public của Grafana. Mỗi lần chỉ tải 200 dòng (có thể chọn 50 hoặc
+100); **Next / Previous** gọi API bằng cursor để xem tiếp đến hết run, không giới
+hạn 10.000 dòng. Panel chỉ giữ dữ liệu trang hiện tại và lịch sử cursor.
+Đổi run, Outcome hoặc số dòng sẽ quay về trang đầu. Refresh dashboard và
+**Refresh page** chỉ tải lại trang hiện tại; không tự tải các trang tiếp theo.
+Sort/lọc cột áp dụng cho trang đang tải; bộ lọc **Outcome** áp dụng toàn bộ run.
+Màu Outcome, kiểu dữ liệu tiền dạng chuỗi và cấu hình độ rộng cột được giữ lại.
+**Refund cross-checks** cũng dùng panel này, mặc định 100 dòng/trang, đọc
+`/reconciliation-runs/{run_id}/refund-cross-checks`. Đổi run sẽ về trang đầu.
+Các panel summary dùng `include_refund_checks=false` để không tải lại cả danh
+sách refund qua từng panel. API summary mặc định vẫn giữ dữ liệu đầy đủ cho
+client cũ; run cũ chưa có financial summary dùng fallback tính lại từ results.
+Request đi qua datasource proxy cùng origin của Grafana, dùng được cả cổng 3000
+và proxy 8080, không cần mở API trực tiếp cho trình duyệt.
+
+Build và chạy panel thử nghiệm:
+
+```bash
+docker compose build api migrate grafana
+docker compose run --rm --no-deps migrate
+docker compose up -d --no-deps api grafana
+```
+
+Image Grafana build plugin từ source, cho phép đúng plugin unsigned
+`paymenthub-evidence-panel` trong môi trường local. Panel dùng Grafana 13.1.6;
+cần kiểm tra lại khi nâng phiên bản.
+Build/check riêng plugin xem [README](../docker/grafana/plugins/paymenthub-evidence-panel/README.md).
 
 ## 3. Generation & Simulation
 

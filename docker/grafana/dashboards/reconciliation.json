@@ -660,9 +660,9 @@
     },
     {
       "id": 21,
-      "title": "Daily Data Quality · latest 500 findings",
-      "type": "table",
-      "description": "Latest 500 persisted rule evaluations, ordered by business date. Each completed run has five rules. Filter columns by date, scope, rule or status. Not an all-history aggregate; empty data does not prove checks passed. Click Run ID to inspect evidence.",
+      "title": "Daily Data Quality",
+      "type": "paymenthub-evidence-panel",
+      "description": "Loads one cursor page at a time; Next/Previous fetch on demand and refresh reloads the current page. Column filters and sorting apply to this page. Affected keys are sampled (first 20); affected counts remain complete.",
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
         "uid": "reconciliation-api"
@@ -769,96 +769,80 @@
         ]
       },
       "options": {
-        "showHeader": true,
-        "cellHeight": "sm",
-        "enablePagination": true
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "yesoreyeram-infinity-datasource",
-            "uid": "reconciliation-api"
+        "resource": "data-quality",
+        "datasourceUid": "reconciliation-api",
+        "runId": "${run_id}",
+        "outcome": "",
+        "pageSize": 100,
+        "columns": [
+          {
+            "selector": "business_date",
+            "text": "Business date",
+            "type": "string"
           },
-          "refId": "A",
-          "type": "json",
-          "source": "url",
-          "format": "table",
-          "parser": "backend",
-          "root_selector": "items",
-          "columns": [
-            {
-              "selector": "business_date",
-              "text": "Business date",
-              "type": "string"
-            },
-            {
-              "selector": "region",
-              "text": "Region",
-              "type": "string"
-            },
-            {
-              "selector": "tenant_id",
-              "text": "Tenant",
-              "type": "string"
-            },
-            {
-              "selector": "provider",
-              "text": "Provider",
-              "type": "string"
-            },
-            {
-              "selector": "run_id",
-              "text": "Run ID",
-              "type": "string"
-            },
-            {
-              "selector": "rule_code",
-              "text": "Rule",
-              "type": "string"
-            },
-            {
-              "selector": "rule_version",
-              "text": "Version",
-              "type": "number"
-            },
-            {
-              "selector": "status",
-              "text": "Status",
-              "type": "string"
-            },
-            {
-              "selector": "severity",
-              "text": "Severity",
-              "type": "string"
-            },
-            {
-              "selector": "evaluated_count",
-              "text": "Evaluated rows",
-              "type": "number"
-            },
-            {
-              "selector": "affected_count",
-              "text": "Affected rows",
-              "type": "number"
-            },
-            {
-              "selector": "affected_result_keys",
-              "text": "Affected result keys",
-              "type": "string"
-            },
-            {
-              "selector": "evaluated_at",
-              "text": "Evaluated at",
-              "type": "timestamp"
-            }
-          ],
-          "url": "/internal/data-quality?limit=500",
-          "url_options": {
-            "method": "GET",
-            "data": ""
+          {
+            "selector": "region",
+            "text": "Region",
+            "type": "string"
+          },
+          {
+            "selector": "tenant_id",
+            "text": "Tenant",
+            "type": "string"
+          },
+          {
+            "selector": "provider",
+            "text": "Provider",
+            "type": "string"
+          },
+          {
+            "selector": "run_id",
+            "text": "Run ID",
+            "type": "string"
+          },
+          {
+            "selector": "rule_code",
+            "text": "Rule",
+            "type": "string"
+          },
+          {
+            "selector": "rule_version",
+            "text": "Version",
+            "type": "number"
+          },
+          {
+            "selector": "status",
+            "text": "Status",
+            "type": "string"
+          },
+          {
+            "selector": "severity",
+            "text": "Severity",
+            "type": "string"
+          },
+          {
+            "selector": "evaluated_count",
+            "text": "Evaluated rows",
+            "type": "number"
+          },
+          {
+            "selector": "affected_count",
+            "text": "Affected rows",
+            "type": "number"
+          },
+          {
+            "selector": "affected_result_keys",
+            "text": "Affected keys (first 20)",
+            "type": "string"
+          },
+          {
+            "selector": "evaluated_at",
+            "text": "Evaluated at",
+            "type": "timestamp"
           }
-        }
-      ]
+        ]
+      },
+      "targets": []
     }
   ]
 }
