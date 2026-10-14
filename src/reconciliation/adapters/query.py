@@ -29,6 +29,33 @@ class PostgreReconQuery:
     def __init__(self, connection):
         self.connection = connection
 
+    def analytics_rows(self, *, from_date, to_date, region, tenant_id=None, provider=None):
+        with self.connection.cursor(row_factory=dict_row) as cursor:
+            cursor.execute('''
+                WITH selected AS (
+                    SELECT DISTINCT ON (business_date, region, tenant_id, provider)
+                           business_date, job_run_id, run_id, region, tenant_id, provider
+                    FROM recon_run
+                    WHERE status = 'COMPLETED' AND business_date BETWEEN %(from)s AND %(to)s
+                      AND region = %(region)s
+                      AND (%(tenant)s::text IS NULL OR tenant_id = %(tenant)s)
+                      AND (%(provider)s::text IS NULL OR provider = %(provider)s)
+                    ORDER BY business_date, region, tenant_id, provider,
+                             finished_at DESC NULLS LAST, started_at DESC, run_id DESC
+                )
+                SELECT s.business_date, s.run_id, s.region, s.tenant_id, s.provider,
+                       j.metrics->'system_rows' AS system_count,
+                       j.metrics->'provider_rows' AS provider_count,
+                       j.metrics->'summary' AS summary,
+                       j.metrics->'financial_summary'->'totals_by_currency' AS currency_totals,
+                       j.metrics->'financial_summary'->'unallocated_currency_count'
+                           AS unallocated_currency_count
+                FROM selected s JOIN job_run_log j USING (job_run_id)
+                ORDER BY s.business_date, s.provider, s.tenant_id NULLS FIRST, s.run_id
+            ''', {'from': from_date, 'to': to_date, 'region': region,
+                  'tenant': tenant_id, 'provider': provider})
+            return cursor.fetchall()
+
     def runs(self, run_id=None, region=None, tenant_id=None, provider=None,
              business_date=None, status=None, after=None, fetch_limit=None):
         clauses, values = [], []
@@ -173,6 +200,13 @@ class PooledReconQuery:
 
     def __init__(self, pool):
         self.pool = pool
+
+    def analytics_rows(self, **parameters):
+        try:
+            with self.pool.connection() as connection:
+                return PostgreReconQuery(connection).analytics_rows(**parameters)
+        except DatabaseError as error:
+            raise QueryUnavailable('QUERY_UNAVAILABLE') from error
 
     def runs(self, **filters):
         try:

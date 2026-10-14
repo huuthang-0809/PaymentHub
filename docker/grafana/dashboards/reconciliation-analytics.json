@@ -1,0 +1,510 @@
+{
+  "uid": "paymenthub-reconciliation-analytics",
+  "id": null,
+  "title": "Reconciliation · Period Summary",
+  "schemaVersion": 41,
+  "version": 6,
+  "editable": true,
+  "refresh": "30s",
+  "timezone": "Asia/Ho_Chi_Minh",
+  "tags": [
+    "paymenthub",
+    "reconciliation"
+  ],
+  "description": "Select a region, enter From date and To date as YYYY-MM-DD, and press Enter. Totals cover the full business-date range, including both dates. Uses the latest COMPLETED run per scope and date. Amounts are in minor units, separated by currency.",
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "annotations": {
+    "list": []
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "region",
+        "label": "Region",
+        "type": "custom",
+        "query": "VN,ASIA,INDIA",
+        "current": {
+          "text": "VN",
+          "value": "VN"
+        },
+        "options": [
+          {
+            "text": "VN",
+            "value": "VN",
+            "selected": true
+          },
+          {
+            "text": "ASIA",
+            "value": "ASIA",
+            "selected": false
+          },
+          {
+            "text": "INDIA",
+            "value": "INDIA",
+            "selected": false
+          }
+        ],
+        "multi": false,
+        "includeAll": false
+      },
+      {
+        "name": "from_date",
+        "label": "From date (YYYY-MM-DD)",
+        "type": "textbox",
+        "query": "2026-10-01",
+        "current": {
+          "text": "2026-10-01",
+          "value": "2026-10-01"
+        },
+        "options": [
+          {
+            "text": "2026-10-01",
+            "value": "2026-10-01",
+            "selected": true
+          }
+        ],
+        "skipUrlSync": false,
+        "hide": 0
+      },
+      {
+        "name": "to_date",
+        "label": "To date (YYYY-MM-DD)",
+        "type": "textbox",
+        "query": "2026-10-14",
+        "current": {
+          "text": "2026-10-14",
+          "value": "2026-10-14"
+        },
+        "options": [
+          {
+            "text": "2026-10-14",
+            "value": "2026-10-14",
+            "selected": true
+          }
+        ],
+        "skipUrlSync": false,
+        "hide": 0
+      }
+    ]
+  },
+  "links": [
+    {
+      "title": "Runs & Operations",
+      "type": "link",
+      "url": "/d/paymenthub-reconciliation",
+      "targetBlank": false
+    }
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "title": "Overview · ${region} · ${from_date} → ${to_date}",
+      "type": "stat",
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "reconciliation-api"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "reconciliation-api"
+          },
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "/reconciliation-runs/analytics?from=${from_date:percentencode}&to=${to_date:percentencode}&groupBy=none&region=${region}",
+          "url_options": {
+            "method": "GET"
+          },
+          "root_selector": "totals",
+          "columns": [
+            {
+              "selector": "run_count",
+              "text": "Completed runs",
+              "type": "number"
+            },
+            {
+              "selector": "system_count",
+              "text": "System rows",
+              "type": "number"
+            },
+            {
+              "selector": "provider_count",
+              "text": "Provider rows",
+              "type": "number"
+            },
+            {
+              "selector": "financial_missing_run_count",
+              "text": "Runs missing financial summary",
+              "type": "number"
+            }
+          ],
+          "filters": []
+        }
+      ],
+      "description": "Select a region, enter From date and To date as YYYY-MM-DD, and press Enter. Totals cover the full business-date range, including both dates. Uses the latest COMPLETED run per scope and date. Amounts are in minor units, separated by currency."
+    },
+    {
+      "id": 3,
+      "title": "Transactions by outcome · ${region} · ${from_date} → ${to_date}",
+      "type": "table",
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "reconciliation-api"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 24,
+        "h": 11
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": true,
+          "reducer": [
+            "sum"
+          ],
+          "fields": [
+            "Transaction count"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "reconciliation-api"
+          },
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "/reconciliation-runs/analytics?from=${from_date:percentencode}&to=${to_date:percentencode}&groupBy=none&region=${region}",
+          "url_options": {
+            "method": "GET"
+          },
+          "root_selector": "outcomes",
+          "columns": [
+            {
+              "selector": "result",
+              "text": "Outcome",
+              "type": "string"
+            },
+            {
+              "selector": "count",
+              "text": "Transaction count",
+              "type": "number"
+            }
+          ],
+          "filters": []
+        }
+      ],
+      "description": "Select a region, enter From date and To date as YYYY-MM-DD, and press Enter. Totals cover the full business-date range, including both dates. Uses the latest COMPLETED run per scope and date. Amounts are in minor units, separated by currency.",
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "indexByName": {
+              "Outcome": 0,
+              "Transaction count": 1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Daily details · ${region} · ${from_date} → ${to_date}",
+      "type": "table",
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "reconciliation-api"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 15,
+        "w": 24,
+        "h": 13
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "custom": {
+            "filterable": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Run ID"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open Run Detail",
+                    "url": "/d/paymenthub-reconciliation-api?var-run_id=${__value.raw}",
+                    "targetBlank": false
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [
+          {
+            "displayName": "Business date",
+            "desc": false
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "reconciliation-api"
+          },
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "/reconciliation-runs/analytics?from=${from_date:percentencode}&to=${to_date:percentencode}&groupBy=none&region=${region}",
+          "url_options": {
+            "method": "GET"
+          },
+          "root_selector": "daily_runs",
+          "columns": [
+            {
+              "selector": "business_date",
+              "text": "Business date",
+              "type": "string"
+            },
+            {
+              "selector": "provider",
+              "text": "Provider",
+              "type": "string"
+            },
+            {
+              "selector": "tenant_id",
+              "text": "Tenant",
+              "type": "string"
+            },
+            {
+              "selector": "run_id",
+              "text": "Run ID",
+              "type": "string"
+            },
+            {
+              "selector": "system_count",
+              "text": "System transactions",
+              "type": "number"
+            },
+            {
+              "selector": "provider_count",
+              "text": "Provider transactions",
+              "type": "number"
+            },
+            {
+              "selector": "result_count",
+              "text": "Total results",
+              "type": "number"
+            },
+            {
+              "selector": "MATCHED",
+              "text": "MATCHED",
+              "type": "number"
+            },
+            {
+              "selector": "FUZZY_MATCHED",
+              "text": "FUZZY_MATCHED",
+              "type": "number"
+            },
+            {
+              "selector": "AMOUNT_MISMATCH",
+              "text": "AMOUNT_MISMATCH",
+              "type": "number"
+            },
+            {
+              "selector": "CURRENCY_MISMATCH",
+              "text": "CURRENCY_MISMATCH",
+              "type": "number"
+            },
+            {
+              "selector": "MISSING_IN_SYSTEM",
+              "text": "MISSING_IN_SYSTEM",
+              "type": "number"
+            },
+            {
+              "selector": "MISSING_IN_PROVIDER",
+              "text": "MISSING_IN_PROVIDER",
+              "type": "number"
+            },
+            {
+              "selector": "DUPLICATE",
+              "text": "DUPLICATE",
+              "type": "number"
+            },
+            {
+              "selector": "NOT_RECONCILABLE",
+              "text": "NOT_RECONCILABLE",
+              "type": "number"
+            },
+            {
+              "selector": "INVALID_DATA",
+              "text": "INVALID_DATA",
+              "type": "number"
+            }
+          ],
+          "filters": []
+        }
+      ],
+      "description": "Each row shows the latest COMPLETED run per business date, tenant, and provider in the selected range. Click Run ID to open the corresponding Run Detail. Dates with multiple scopes have multiple rows. Dates without completed runs have no rows.",
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "indexByName": {
+              "Business date": 0,
+              "Provider": 1,
+              "Tenant": 2,
+              "Run ID": 3,
+              "System transactions": 4,
+              "Provider transactions": 5,
+              "Total results": 6,
+              "MATCHED": 7,
+              "FUZZY_MATCHED": 8,
+              "AMOUNT_MISMATCH": 9,
+              "CURRENCY_MISMATCH": 10,
+              "MISSING_IN_SYSTEM": 11,
+              "MISSING_IN_PROVIDER": 12,
+              "DUPLICATE": 13,
+              "NOT_RECONCILABLE": 14,
+              "INVALID_DATA": 15
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Selected period · currency balance (minor units)",
+      "type": "table",
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "reconciliation-api"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 28,
+        "w": 24,
+        "h": 7
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "reconciliation-api"
+          },
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "/reconciliation-runs/analytics?from=${from_date:percentencode}&to=${to_date:percentencode}&groupBy=none&region=${region}",
+          "url_options": {
+            "method": "GET"
+          },
+          "root_selector": "totals.totals_by_currency",
+          "columns": [
+            {
+              "selector": "currency",
+              "text": "Currency",
+              "type": "string"
+            },
+            {
+              "selector": "system_amount_minor",
+              "text": "system_amount_minor",
+              "type": "string"
+            },
+            {
+              "selector": "provider_amount_minor",
+              "text": "provider_amount_minor",
+              "type": "string"
+            },
+            {
+              "selector": "delta_amount_minor",
+              "text": "delta_amount_minor",
+              "type": "string"
+            },
+            {
+              "selector": "system_missing_amount_count",
+              "text": "system_missing_amount_count",
+              "type": "number"
+            },
+            {
+              "selector": "provider_missing_amount_count",
+              "text": "provider_missing_amount_count",
+              "type": "number"
+            }
+          ],
+          "filters": []
+        }
+      ],
+      "description": "Select a region, enter From date and To date as YYYY-MM-DD, and press Enter. Totals cover the full business-date range, including both dates. Uses the latest COMPLETED run per scope and date. Amounts are in minor units, separated by currency."
+    }
+  ],
+  "timepicker": {
+    "hidden": true
+  }
+}

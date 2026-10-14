@@ -50,6 +50,24 @@ class QueryReconciliation:
         self.reader = reader
         self.exporter = exporter
 
+    def analytics(self, *, from_date, to_date, region, group_by='day',
+                  tenant_id=None, provider=None):
+        from .analytics import build_analytics
+
+        if from_date > to_date:
+            raise ValueError('from must be on or before to')
+        rows = self.reader.analytics_rows(
+            from_date=from_date, to_date=to_date,
+            region=region.value, tenant_id=tenant_id,
+            provider=provider.strip().upper() if provider else None,
+        )
+        return dict(
+            **build_analytics(rows, from_date, to_date, group_by),
+            **{'from': from_date, 'to': to_date, 'groupBy': group_by, 'region': region.value},
+            meta={'date_basis': 'business_date', 'run_policy': 'latest_completed_per_scope_date',
+                  'data_as_of': datetime.now(UTC)},
+        )
+
     def snapshot(self, run_id, require_completed=False, *, include_results=True):
         snapshot = self.reader.snapshot(run_id, include_results=include_results)
         if snapshot is None:

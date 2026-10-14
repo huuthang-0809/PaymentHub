@@ -16,14 +16,19 @@
     "reconciliation",
     "operations"
   ],
-  "time": {
-    "from": "now-7d",
-    "to": "now"
+  "timepicker": {
+    "hidden": true
   },
   "templating": {
     "list": []
   },
   "links": [
+    {
+      "title": "Period Summary",
+      "type": "link",
+      "url": "/d/paymenthub-reconciliation-analytics",
+      "targetBlank": false
+    },
     {
       "title": "Alerting workspace",
       "type": "link",

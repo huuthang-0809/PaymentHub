@@ -74,3 +74,58 @@ Khởi động scheduler và proxy theo hướng dẫn trong `README.md`. Khi th
 Hai dashboard đối soát giữ nguyên UID. Dashboard mới dùng UID `paymenthub-scheduler-jobs`. Dashboard Operations thay thế dashboard Prometheus overview cũ. Datasource Infinity `reconciliation-api` dùng cho API đối soát, `scheduler-api` cho trạng thái job và datasource Prometheus cho alert.
 
 Grafana đang chạy với bind mount sẽ tự đọc thay đổi theo chu kỳ provisioning 30 giây; không cần restart khi chỉ thay JSON. Kiểm tra `/api/dashboards/uid/paymenthub-reconciliation`, `/api/dashboards/uid/paymenthub-reconciliation-api` và `/api/datasources/uid/reconciliation-api/health` bằng tài khoản Grafana có quyền đọc.
+
+## 4. Period Summary
+
+Mở `/d/paymenthub-reconciliation-analytics` hoặc bấm **Period Summary** trên
+Runs & Operations. Nhập **From date** và **To date** theo `YYYY-MM-DD`, nhấn Enter
+sau khi sửa từng ô để tải lại dữ liệu. Hai ngày đều được tính vào khoảng chọn.
+Bộ chọn thời gian Grafana được ẩn; các ô ngày là bộ lọc cho mọi panel.
+Chọn **Region**: `VN` (mặc định), `ASIA`, hoặc `INDIA`; mọi panel lọc theo một region đã chọn.
+Dashboard hiển thị input volume, bảng **Transactions by outcome** (mỗi loại
+kết quả một dòng, cộng toàn khoảng, gồm cả loại có số lượng 0) và tổng tiền theo currency.
+Bảng **Daily details** hiển thị số dòng hệ thống/provider và đủ chín loại kết quả
+cho mỗi run được chọn, bấm **Run ID** để mở Run Detail tương ứng. Một ngày có nhiều
+tenant/provider có nhiều dòng để link đến đúng run; ngày chưa có run COMPLETED không có dòng.
+Dashboard dùng `groupBy=none`; API vẫn hỗ trợ gom ngày/tuần/tháng cho client khác.
+
+Các panel dùng cùng API:
+
+```http
+GET /reconciliation-runs/analytics?from=2026-10-01&to=2026-10-14&groupBy=none&region=VN
+```
+
+- `from`, `to` là ngày ISO, bao gồm cả hai đầu, lọc theo `business_date`,
+  không theo thời điểm chạy job. Không lọc giờ bên trong một ngày đối soát.
+  Cutoff/timezone đã được áp dụng khi chạy.
+- `groupBy` mặc định `day`; kỳ đầu/cuối chỉ tính các ngày trong khoảng chọn.
+  Ngày bắt đầu tuần/tháng trong response có thể nằm trước `from`.
+- `region` bắt buộc: `VN`, `ASIA`, hoặc `INDIA`. Thiếu region hoặc gửi `ALL` trả 422.
+  Bộ lọc tùy chọn: `tenant_id`, `provider`.
+- Chọn run `COMPLETED` mới nhất cho mỗi `(business_date, region, tenant_id,
+  provider)`, theo `finished_at`, `started_at`, `run_id`. Run FAILED/PENDING/RUNNING
+  mới hơn không thay thế kết quả hoàn tất. Quy tắc coi run mới nhất là bản thay thế;
+  chưa hỗ trợ cộng nhiều statement độc lập cho cùng scope/ngày.
+- Response có `daily_runs` (ngày, scope, run_id và số lượng từng kết quả của mỗi run đã chọn),
+  `outcomes` (các dòng `{result, count}` tổng toàn khoảng),
+  `totals`, `buckets`, `financial_buckets` (bảng tiền theo kỳ) và `meta`
+  ghi rõ chính sách chọn run. Counts của chín outcome là các trường phẳng để Grafana
+  query trực tiếp. Kỳ không có run trả counts bằng 0, không đồng nghĩa đối soát khớp.
+- Tiền là chuỗi số nguyên theo minor units, tách từng currency. Không cộng tiền
+  khác currency. Delta là null khi thiếu bằng chứng tiền/currency; số tiền có dữ liệu
+  vẫn được cộng. Run cũ thiếu financial summary được đếm trong
+  `financial_missing_run_count`, không tải lại toàn bộ transaction evidence.
+- Không cần migration: đọc summary đã lưu trong `job_run_log.metrics`, không
+  chạy lại matching. Bản đơn giản tổng hợp các snapshot đã chọn trong bộ nhớ API.
+
+URL query trong Infinity datasource `reconciliation-api`:
+
+```text
+/reconciliation-runs/analytics?from=${from_date:percentencode}&to=${to_date:percentencode}&groupBy=none&region=${region}
+```
+
+Dùng `root_selector=daily_runs` cho bảng chi tiết ngày với link theo `run_id`;
+`outcomes` cho bảng số lượng từng kết quả toàn khoảng;
+`buckets` cho số lượng theo kỳ,
+`totals.totals_by_currency` cho tổng tiền toàn khoảng, hoặc `financial_buckets`
+cho tiền theo kỳ. Giữ cột tiền ở kiểu string để tránh mất độ chính xác.
