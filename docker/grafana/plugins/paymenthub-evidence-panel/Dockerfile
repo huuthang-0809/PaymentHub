@@ -9,4 +9,5 @@ RUN npm run build
 FROM grafana/grafana:13.1.6
 COPY --from=build /plugin/dist /opt/paymenthub-evidence-panel
 COPY --chmod=755 install-panel.sh /usr/local/bin/paymenthub-grafana.sh
+USER 472
 ENTRYPOINT ["/usr/local/bin/paymenthub-grafana.sh"]
