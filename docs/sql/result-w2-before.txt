@@ -1,0 +1,153 @@
+Timing is on.
+                                                                                                                     QUERY PLAN                                                                                                                     
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Finalize GroupAggregate  (cost=7576.96..7577.98 rows=4 width=15) (actual time=23.663..26.199 rows=4 loops=1)
+   Group Key: canonical_event.status
+   Buffers: shared hit=4405
+   ->  Gather Merge  (cost=7576.96..7577.90 rows=8 width=15) (actual time=23.655..26.189 rows=12 loops=1)
+         Workers Planned: 2
+         Workers Launched: 2
+         Buffers: shared hit=4405
+         ->  Sort  (cost=6576.94..6576.95 rows=4 width=15) (actual time=20.505..20.509 rows=4 loops=3)
+               Sort Key: canonical_event.status
+               Sort Method: quicksort  Memory: 25kB
+               Buffers: shared hit=4405
+               Worker 0:  Sort Method: quicksort  Memory: 25kB
+               Worker 1:  Sort Method: quicksort  Memory: 25kB
+               ->  Partial HashAggregate  (cost=6576.86..6576.90 rows=4 width=15) (actual time=20.473..20.477 rows=4 loops=3)
+                     Group Key: canonical_event.status
+                     Batches: 1  Memory Usage: 24kB
+                     Buffers: shared hit=4389
+                     Worker 0:  Batches: 1  Memory Usage: 24kB
+                     Worker 1:  Batches: 1  Memory Usage: 24kB
+                     ->  Parallel Append  (cost=0.29..6372.28 rows=40916 width=7) (actual time=0.039..16.866 rows=33000 loops=3)
+                           Buffers: shared hit=4389
+                           ->  Parallel Index Scan using canonical_event_20260919_region_tenant_id_provider_updated__idx on canonical_event_20260919 canonical_event_2  (cost=0.29..6.05 rows=1 width=7) (actual time=0.025..0.025 rows=0 loops=1)
+                                 Index Cond: (region = 'VN'::text)
+                                 Filter: ((NOT is_deleted) AND (NOT is_test_data) AND (event_date >= '2026-09-01'::date) AND (event_date <= '2026-09-30'::date))
+                                 Buffers: shared hit=3
+                           ->  Parallel Index Scan using canonical_event_20260920_region_tenant_id_provider_updated__idx on canonical_event_20260920 canonical_event_3  (cost=0.29..6.05 rows=1 width=8) (actual time=0.005..0.005 rows=0 loops=1)
+                                 Index Cond: (region = 'VN'::text)
+                                 Filter: ((NOT is_deleted) AND (NOT is_test_data) AND (event_date >= '2026-09-01'::date) AND (event_date <= '2026-09-30'::date))
+                                 Buffers: shared hit=3
+                           ->  Parallel Index Scan using canonical_event_20260922_region_tenant_id_provider_updated__idx on canonical_event_20260922 canonical_event_5  (cost=0.29..6.05 rows=1 width=8) (actual time=0.009..0.010 rows=0 loops=1)
+                                 Index Cond: (region = 'VN'::text)
+                                 Filter: ((NOT is_deleted) AND (NOT is_test_data) AND (event_date >= '2026-09-01'::date) AND (event_date <= '2026-09-30'::date))
+                                 Buffers: shared hit=3
+                           ->  Parallel Index Scan using canonical_event_20260923_region_tenant_id_provider_updated__idx on canonical_event_20260923 canonical_event_6  (cost=0.29..6.05 rows=1 width=7) (actual time=0.012..0.012 rows=0 loops=1)
+                                 Index Cond: (region = 'VN'::text)
+                                 Filter: ((NOT is_deleted) AND (NOT is_test_data) AND (event_date >= '2026-09-01'::date) AND (event_date <= '2026-09-30'::date))
+                                 Buffers: shared hit=3
+                           ->  Parallel Index Scan using canonical_event_20260925_region_tenant_id_provider_updated__idx on canonical_event_20260925 canonical_event_8  (cost=0.29..6.05 rows=1 width=7) (actual time=0.007..0.007 rows=0 loops=1)
+                                 Index Cond: (region = 'VN'::text)
+                                 Filter: ((NOT is_deleted) AND (NOT is_test_data) AND (event_date >= '2026-09-01'::date) AND (event_date <= '2026-09-30'::date))
+                                 Buffers: shared hit=3
+                           ->  Parallel Index Scan using canonical_event_20260926_region_tenant_id_provider_updated__idx on canonical_event_20260926 canonical_event_9  (cost=0.29..6.05 rows=1 width=8) (actual time=0.004..0.004 rows=0 loops=1)
+                                 Index Cond: (region = 'VN'::text)
+                                 Filter: ((NOT is_deleted) AND (NOT is_test_data) AND (event_date >= '2026-09-01'::date) AND (event_date <= '2026-09-30'::date))
+                                 Buffers: shared hit=3
+                           ->  Parallel Index Scan using canonical_event_20260928_region_tenant_id_provider_updated__idx on canonical_event_20260928 canonical_event_11  (cost=0.29..6.05 rows=1 width=8) (actual time=0.012..0.012 rows=0 loops=1)
+                                 Index Cond: (region = 'VN'::text)
+                                 Filter: ((NOT is_deleted) AND (NOT is_test_data) AND (event_date >= '2026-09-01'::date) AND (event_date <= '2026-09-30'::date))
+                                 Buffers: shared hit=3
+                           ->  Parallel Index Scan using canonical_event_20260929_region_tenant_id_provider_updated__idx on canonical_event_20260929 canonical_event_12  (cost=0.29..6.05 rows=1 width=7) (actual time=0.005..0.006 rows=0 loops=1)
+                                 Index Cond: (region = 'VN'::text)
+                                 Filter: ((NOT is_deleted) AND (NOT is_test_data) AND (event_date >= '2026-09-01'::date) AND (event_date <= '2026-09-30'::date))
+                                 Buffers: shared hit=3
+                           ->  Parallel Seq Scan on canonical_event_default canonical_event_14  (cost=0.00..4639.58 rows=20682 width=7) (actual time=0.010..10.816 rows=16667 loops=3)
+                                 Filter: ((NOT is_deleted) AND (NOT is_test_data) AND (event_date >= '2026-09-01'::date) AND (event_date <= '2026-09-30'::date) AND (region = 'VN'::text))
+                                 Rows Removed by Filter: 40000
+                                 Buffers: shared hit=3400
+                           ->  Parallel Seq Scan on canonical_event_20260918 canonical_event_1  (cost=0.00..295.94 rows=5882 width=8) (actual time=0.011..3.100 rows=10000 loops=1)
+                                 Filter: ((NOT is_deleted) AND (NOT is_test_data) AND (event_date >= '2026-09-01'::date) AND (event_date <= '2026-09-30'::date) AND (region = 'VN'::text))
+                                 Buffers: shared hit=193
+                           ->  Parallel Seq Scan on canonical_event_20260921 canonical_event_4  (cost=0.00..295.94 rows=5882 width=7) (actual time=0.008..1.282 rows=5000 loops=2)
+                                 Filter: ((NOT is_deleted) AND (NOT is_test_data) AND (event_date >= '2026-09-01'::date) AND (event_date <= '2026-09-30'::date) AND (region = 'VN'::text))
+                                 Buffers: shared hit=193
+                           ->  Parallel Seq Scan on canonical_event_20260924 canonical_event_7  (cost=0.00..295.94 rows=5882 width=8) (actual time=0.011..2.439 rows=10000 loops=1)
+                                 Filter: ((NOT is_deleted) AND (NOT is_test_data) AND (event_date >= '2026-09-01'::date) AND (event_date <= '2026-09-30'::date) AND (region = 'VN'::text))
+                                 Buffers: shared hit=193
+                           ->  Parallel Seq Scan on canonical_event_20260927 canonical_event_10  (cost=0.00..295.94 rows=5882 width=7) (actual time=0.007..2.060 rows=10000 loops=1)
+                                 Filter: ((NOT is_deleted) AND (NOT is_test_data) AND (event_date >= '2026-09-01'::date) AND (event_date <= '2026-09-30'::date) AND (region = 'VN'::text))
+                                 Buffers: shared hit=193
+                           ->  Parallel Seq Scan on canonical_event_20260930 canonical_event_13  (cost=0.00..295.94 rows=5029 width=8) (actual time=0.014..3.034 rows=9000 loops=1)
+                                 Filter: ((NOT is_deleted) AND (NOT is_test_data) AND (event_date >= '2026-09-01'::date) AND (event_date <= '2026-09-30'::date) AND (region = 'VN'::text))
+                                 Rows Removed by Filter: 1000
+                                 Buffers: shared hit=193
+ Planning:
+   Buffers: shared hit=1343
+ Planning Time: 3.499 ms
+ Execution Time: 26.367 ms
+(77 rows)
+
+Time: 31.156 ms
+                                                                                                                   QUERY PLAN                                                                                                                    
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=10576.43..10588.10 rows=100 width=43) (actual time=19.813..22.314 rows=100 loops=1)
+   Buffers: shared hit=4653
+   ->  Gather Merge  (cost=10576.43..20313.41 rows=83454 width=43) (actual time=19.812..22.308 rows=100 loops=1)
+         Workers Planned: 2
+         Workers Launched: 2
+         Buffers: shared hit=4653
+         ->  Sort  (cost=9576.41..9680.73 rows=41727 width=43) (actual time=16.793..16.800 rows=100 loops=3)
+               Sort Key: canonical_event.updated_at DESC
+               Sort Method: top-N heapsort  Memory: 40kB
+               Buffers: shared hit=4653
+               Worker 0:  Sort Method: top-N heapsort  Memory: 40kB
+               Worker 1:  Sort Method: top-N heapsort  Memory: 38kB
+               ->  Parallel Append  (cost=0.00..7981.63 rows=41727 width=43) (actual time=0.614..12.186 rows=33333 loops=3)
+                     Buffers: shared hit=4637
+                     ->  Seq Scan on canonical_event_20261001 canonical_event_14  (cost=0.00..0.00 rows=1 width=108) (actual time=0.018..0.018 rows=0 loops=1)
+                           Filter: ((updated_at >= '2026-09-01 00:00:00+00'::timestamp with time zone) AND (provider = 'ONEPAY'::text))
+                     ->  Seq Scan on canonical_event_20261002 canonical_event_15  (cost=0.00..0.00 rows=1 width=108) (actual time=0.010..0.010 rows=0 loops=1)
+                           Filter: ((updated_at >= '2026-09-01 00:00:00+00'::timestamp with time zone) AND (provider = 'ONEPAY'::text))
+                     ->  Parallel Index Scan using canonical_event_20260919_region_tenant_id_provider_updated__idx on canonical_event_20260919 canonical_event_2  (cost=0.29..238.04 rows=1 width=44) (actual time=0.337..0.337 rows=0 loops=1)
+                           Index Cond: ((provider = 'ONEPAY'::text) AND (updated_at >= '2026-09-01 00:00:00+00'::timestamp with time zone))
+                           Buffers: shared hit=34
+                     ->  Parallel Index Scan using canonical_event_20260920_region_tenant_id_provider_updated__idx on canonical_event_20260920 canonical_event_3  (cost=0.29..238.04 rows=1 width=46) (actual time=0.331..0.331 rows=0 loops=1)
+                           Index Cond: ((provider = 'ONEPAY'::text) AND (updated_at >= '2026-09-01 00:00:00+00'::timestamp with time zone))
+                           Buffers: shared hit=34
+                     ->  Parallel Index Scan using canonical_event_20260922_region_tenant_id_provider_updated__idx on canonical_event_20260922 canonical_event_5  (cost=0.29..238.04 rows=1 width=45) (actual time=0.180..0.180 rows=0 loops=1)
+                           Index Cond: ((provider = 'ONEPAY'::text) AND (updated_at >= '2026-09-01 00:00:00+00'::timestamp with time zone))
+                           Buffers: shared hit=34
+                     ->  Parallel Index Scan using canonical_event_20260923_region_tenant_id_provider_updated__idx on canonical_event_20260923 canonical_event_6  (cost=0.29..238.04 rows=1 width=45) (actual time=0.184..0.184 rows=0 loops=1)
+                           Index Cond: ((provider = 'ONEPAY'::text) AND (updated_at >= '2026-09-01 00:00:00+00'::timestamp with time zone))
+                           Buffers: shared hit=34
+                     ->  Parallel Index Scan using canonical_event_20260925_region_tenant_id_provider_updated__idx on canonical_event_20260925 canonical_event_8  (cost=0.29..238.04 rows=1 width=44) (actual time=0.194..0.194 rows=0 loops=1)
+                           Index Cond: ((provider = 'ONEPAY'::text) AND (updated_at >= '2026-09-01 00:00:00+00'::timestamp with time zone))
+                           Buffers: shared hit=34
+                     ->  Parallel Index Scan using canonical_event_20260926_region_tenant_id_provider_updated__idx on canonical_event_20260926 canonical_event_9  (cost=0.29..238.04 rows=1 width=46) (actual time=0.183..0.183 rows=0 loops=1)
+                           Index Cond: ((provider = 'ONEPAY'::text) AND (updated_at >= '2026-09-01 00:00:00+00'::timestamp with time zone))
+                           Buffers: shared hit=34
+                     ->  Parallel Index Scan using canonical_event_20260928_region_tenant_id_provider_updated__idx on canonical_event_20260928 canonical_event_11  (cost=0.29..238.04 rows=1 width=45) (actual time=0.182..0.182 rows=0 loops=1)
+                           Index Cond: ((provider = 'ONEPAY'::text) AND (updated_at >= '2026-09-01 00:00:00+00'::timestamp with time zone))
+                           Buffers: shared hit=34
+                     ->  Parallel Index Scan using canonical_event_20260929_region_tenant_id_provider_updated__idx on canonical_event_20260929 canonical_event_12  (cost=0.29..238.04 rows=1 width=45) (actual time=0.195..0.195 rows=0 loops=1)
+                           Index Cond: ((provider = 'ONEPAY'::text) AND (updated_at >= '2026-09-01 00:00:00+00'::timestamp with time zone))
+                           Buffers: shared hit=34
+                     ->  Parallel Seq Scan on canonical_event_default canonical_event_16  (cost=0.00..4462.50 rows=20887 width=43) (actual time=0.006..7.077 rows=16667 loops=3)
+                           Filter: ((updated_at >= '2026-09-01 00:00:00+00'::timestamp with time zone) AND (provider = 'ONEPAY'::text))
+                           Rows Removed by Filter: 40000
+                           Buffers: shared hit=3400
+                     ->  Parallel Seq Scan on canonical_event_20260918 canonical_event_1  (cost=0.00..281.24 rows=5882 width=43) (actual time=0.009..2.702 rows=10000 loops=1)
+                           Filter: ((updated_at >= '2026-09-01 00:00:00+00'::timestamp with time zone) AND (provider = 'ONEPAY'::text))
+                           Buffers: shared hit=193
+                     ->  Parallel Seq Scan on canonical_event_20260921 canonical_event_4  (cost=0.00..281.24 rows=5882 width=42) (actual time=0.003..0.698 rows=5000 loops=2)
+                           Filter: ((updated_at >= '2026-09-01 00:00:00+00'::timestamp with time zone) AND (provider = 'ONEPAY'::text))
+                           Buffers: shared hit=193
+                     ->  Parallel Seq Scan on canonical_event_20260924 canonical_event_7  (cost=0.00..281.24 rows=5882 width=43) (actual time=0.003..1.237 rows=10000 loops=1)
+                           Filter: ((updated_at >= '2026-09-01 00:00:00+00'::timestamp with time zone) AND (provider = 'ONEPAY'::text))
+                           Buffers: shared hit=193
+                     ->  Parallel Seq Scan on canonical_event_20260927 canonical_event_10  (cost=0.00..281.24 rows=5882 width=42) (actual time=0.003..1.815 rows=10000 loops=1)
+                           Filter: ((updated_at >= '2026-09-01 00:00:00+00'::timestamp with time zone) AND (provider = 'ONEPAY'::text))
+                           Buffers: shared hit=193
+                     ->  Parallel Seq Scan on canonical_event_20260930 canonical_event_13  (cost=0.00..281.24 rows=5882 width=43) (actual time=0.006..1.925 rows=10000 loops=1)
+                           Filter: ((updated_at >= '2026-09-01 00:00:00+00'::timestamp with time zone) AND (provider = 'ONEPAY'::text))
+                           Buffers: shared hit=193
+ Planning:
+   Buffers: shared hit=322
+ Planning Time: 1.515 ms
+ Execution Time: 22.381 ms
+(65 rows)
+
+Time: 24.754 ms

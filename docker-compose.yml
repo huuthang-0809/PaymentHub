@@ -297,6 +297,7 @@ services:
     image: paymenthub-grafana:13.1.6
     container_name: paymenthub_grafana
     environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-paymenthub}
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
       GF_USERS_ALLOW_SIGN_UP: "false"
@@ -323,6 +324,7 @@ services:
 
 volumes:
   postgres_data:
+    name: ${POSTGRES_VOLUME_NAME:-paymenthub_postgres_data_v2}
   mongo_data:
   prometheus_data:
   grafana_data:

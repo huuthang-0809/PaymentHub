@@ -1,0 +1,134 @@
+Timing is on.
+                                                                                                          QUERY PLAN                                                                                                          
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ HashAggregate  (cost=3629.51..3629.55 rows=4 width=15) (actual time=20.322..20.327 rows=4 loops=1)
+   Group Key: canonical_event.status
+   Batches: 1  Memory Usage: 24kB
+   Buffers: shared hit=6 read=111
+   ->  Append  (cost=0.29..3137.60 rows=98381 width=7) (actual time=0.069..10.932 rows=99000 loops=1)
+         Buffers: shared hit=6 read=111
+         ->  Index Only Scan using canonical_event_20260918_region_event_date_status_idx on canonical_event_20260918 canonical_event_1  (cost=0.29..269.29 rows=10000 width=8) (actual time=0.068..0.763 rows=10000 loops=1)
+               Index Cond: ((region = 'VN'::text) AND (event_date >= '2026-09-01'::date) AND (event_date <= '2026-09-30'::date))
+               Heap Fetches: 0
+               Buffers: shared hit=1 read=10
+         ->  Index Only Scan using canonical_event_20260919_region_event_date_status_idx on canonical_event_20260919 canonical_event_2  (cost=0.29..4.31 rows=1 width=7) (actual time=0.023..0.023 rows=0 loops=1)
+               Index Cond: ((region = 'VN'::text) AND (event_date >= '2026-09-01'::date) AND (event_date <= '2026-09-30'::date))
+               Heap Fetches: 0
+               Buffers: shared read=2
+         ->  Index Only Scan using canonical_event_20260920_region_event_date_status_idx on canonical_event_20260920 canonical_event_3  (cost=0.29..4.31 rows=1 width=8) (actual time=0.018..0.018 rows=0 loops=1)
+               Index Cond: ((region = 'VN'::text) AND (event_date >= '2026-09-01'::date) AND (event_date <= '2026-09-30'::date))
+               Heap Fetches: 0
+               Buffers: shared read=2
+         ->  Index Only Scan using canonical_event_20260921_region_event_date_status_idx on canonical_event_20260921 canonical_event_4  (cost=0.29..269.29 rows=10000 width=7) (actual time=0.040..0.726 rows=10000 loops=1)
+               Index Cond: ((region = 'VN'::text) AND (event_date >= '2026-09-01'::date) AND (event_date <= '2026-09-30'::date))
+               Heap Fetches: 0
+               Buffers: shared hit=1 read=10
+         ->  Index Only Scan using canonical_event_20260922_region_event_date_status_idx on canonical_event_20260922 canonical_event_5  (cost=0.29..4.31 rows=1 width=8) (actual time=0.023..0.023 rows=0 loops=1)
+               Index Cond: ((region = 'VN'::text) AND (event_date >= '2026-09-01'::date) AND (event_date <= '2026-09-30'::date))
+               Heap Fetches: 0
+               Buffers: shared read=2
+         ->  Index Only Scan using canonical_event_20260923_region_event_date_status_idx on canonical_event_20260923 canonical_event_6  (cost=0.29..4.31 rows=1 width=7) (actual time=0.025..0.025 rows=0 loops=1)
+               Index Cond: ((region = 'VN'::text) AND (event_date >= '2026-09-01'::date) AND (event_date <= '2026-09-30'::date))
+               Heap Fetches: 0
+               Buffers: shared read=2
+         ->  Index Only Scan using canonical_event_20260924_region_event_date_status_idx on canonical_event_20260924 canonical_event_7  (cost=0.29..269.29 rows=10000 width=8) (actual time=0.052..0.736 rows=10000 loops=1)
+               Index Cond: ((region = 'VN'::text) AND (event_date >= '2026-09-01'::date) AND (event_date <= '2026-09-30'::date))
+               Heap Fetches: 0
+               Buffers: shared hit=1 read=10
+         ->  Index Only Scan using canonical_event_20260925_region_event_date_status_idx on canonical_event_20260925 canonical_event_8  (cost=0.29..4.31 rows=1 width=7) (actual time=0.023..0.023 rows=0 loops=1)
+               Index Cond: ((region = 'VN'::text) AND (event_date >= '2026-09-01'::date) AND (event_date <= '2026-09-30'::date))
+               Heap Fetches: 0
+               Buffers: shared read=2
+         ->  Index Only Scan using canonical_event_20260926_region_event_date_status_idx on canonical_event_20260926 canonical_event_9  (cost=0.29..4.31 rows=1 width=8) (actual time=0.027..0.027 rows=0 loops=1)
+               Index Cond: ((region = 'VN'::text) AND (event_date >= '2026-09-01'::date) AND (event_date <= '2026-09-30'::date))
+               Heap Fetches: 0
+               Buffers: shared read=2
+         ->  Index Only Scan using canonical_event_20260927_region_event_date_status_idx on canonical_event_20260927 canonical_event_10  (cost=0.29..269.29 rows=10000 width=7) (actual time=0.045..0.737 rows=10000 loops=1)
+               Index Cond: ((region = 'VN'::text) AND (event_date >= '2026-09-01'::date) AND (event_date <= '2026-09-30'::date))
+               Heap Fetches: 0
+               Buffers: shared hit=1 read=10
+         ->  Index Only Scan using canonical_event_20260928_region_event_date_status_idx on canonical_event_20260928 canonical_event_11  (cost=0.29..4.31 rows=1 width=8) (actual time=0.021..0.022 rows=0 loops=1)
+               Index Cond: ((region = 'VN'::text) AND (event_date >= '2026-09-01'::date) AND (event_date <= '2026-09-30'::date))
+               Heap Fetches: 0
+               Buffers: shared read=2
+         ->  Index Only Scan using canonical_event_20260929_region_event_date_status_idx on canonical_event_20260929 canonical_event_12  (cost=0.29..4.31 rows=1 width=7) (actual time=0.027..0.028 rows=0 loops=1)
+               Index Cond: ((region = 'VN'::text) AND (event_date >= '2026-09-01'::date) AND (event_date <= '2026-09-30'::date))
+               Heap Fetches: 0
+               Buffers: shared read=2
+         ->  Index Only Scan using canonical_event_20260930_region_event_date_status_idx on canonical_event_20260930 canonical_event_13  (cost=0.29..232.66 rows=8550 width=8) (actual time=0.048..0.690 rows=9000 loops=1)
+               Index Cond: ((region = 'VN'::text) AND (event_date >= '2026-09-01'::date) AND (event_date <= '2026-09-30'::date))
+               Heap Fetches: 0
+               Buffers: shared hit=1 read=9
+         ->  Index Only Scan using canonical_event_default_region_event_date_status_idx on canonical_event_default canonical_event_14  (cost=0.42..1301.44 rows=49823 width=7) (actual time=0.058..2.597 rows=50000 loops=1)
+               Index Cond: ((region = 'VN'::text) AND (event_date >= '2026-09-01'::date) AND (event_date <= '2026-09-30'::date))
+               Heap Fetches: 0
+               Buffers: shared hit=1 read=46
+ Planning:
+   Buffers: shared hit=1809 read=28
+ Planning Time: 4.990 ms
+ Execution Time: 20.454 ms
+(66 rows)
+
+Time: 26.639 ms
+                                                                                                    QUERY PLAN                                                                                                    
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=4.70..25.18 rows=100 width=43) (actual time=0.597..0.751 rows=100 loops=1)
+   Buffers: shared hit=109 read=29
+   ->  Merge Append  (cost=4.70..20548.65 rows=100269 width=43) (actual time=0.595..0.725 rows=100 loops=1)
+         Sort Key: canonical_event.updated_at DESC
+         Buffers: shared hit=109 read=29
+         ->  Index Scan using canonical_event_20260918_provider_updated_at_idx on canonical_event_20260918 canonical_event_1  (cost=0.29..740.26 rows=9999 width=43) (actual time=0.081..0.082 rows=1 loops=1)
+               Index Cond: ((provider = 'ONEPAY'::text) AND (updated_at >= '2026-09-01 00:00:00+00'::timestamp with time zone))
+               Buffers: shared hit=1 read=2
+         ->  Index Scan using canonical_event_20260919_provider_updated_at_idx on canonical_event_20260919 canonical_event_2  (cost=0.29..6.05 rows=1 width=44) (actual time=0.031..0.031 rows=0 loops=1)
+               Index Cond: ((provider = 'ONEPAY'::text) AND (updated_at >= '2026-09-01 00:00:00+00'::timestamp with time zone))
+               Buffers: shared read=2
+         ->  Index Scan using canonical_event_20260920_provider_updated_at_idx on canonical_event_20260920 canonical_event_3  (cost=0.29..6.05 rows=1 width=46) (actual time=0.031..0.031 rows=0 loops=1)
+               Index Cond: ((provider = 'ONEPAY'::text) AND (updated_at >= '2026-09-01 00:00:00+00'::timestamp with time zone))
+               Buffers: shared read=2
+         ->  Index Scan using canonical_event_20260921_provider_updated_at_idx on canonical_event_20260921 canonical_event_4  (cost=0.29..740.26 rows=9999 width=42) (actual time=0.058..0.058 rows=1 loops=1)
+               Index Cond: ((provider = 'ONEPAY'::text) AND (updated_at >= '2026-09-01 00:00:00+00'::timestamp with time zone))
+               Buffers: shared hit=1 read=2
+         ->  Index Scan using canonical_event_20260922_provider_updated_at_idx on canonical_event_20260922 canonical_event_5  (cost=0.29..6.05 rows=1 width=45) (actual time=0.033..0.033 rows=0 loops=1)
+               Index Cond: ((provider = 'ONEPAY'::text) AND (updated_at >= '2026-09-01 00:00:00+00'::timestamp with time zone))
+               Buffers: shared read=2
+         ->  Index Scan using canonical_event_20260923_provider_updated_at_idx on canonical_event_20260923 canonical_event_6  (cost=0.29..6.05 rows=1 width=45) (actual time=0.038..0.038 rows=0 loops=1)
+               Index Cond: ((provider = 'ONEPAY'::text) AND (updated_at >= '2026-09-01 00:00:00+00'::timestamp with time zone))
+               Buffers: shared read=2
+         ->  Index Scan using canonical_event_20260924_provider_updated_at_idx on canonical_event_20260924 canonical_event_7  (cost=0.29..740.26 rows=9999 width=43) (actual time=0.048..0.049 rows=1 loops=1)
+               Index Cond: ((provider = 'ONEPAY'::text) AND (updated_at >= '2026-09-01 00:00:00+00'::timestamp with time zone))
+               Buffers: shared hit=1 read=2
+         ->  Index Scan using canonical_event_20260925_provider_updated_at_idx on canonical_event_20260925 canonical_event_8  (cost=0.29..6.05 rows=1 width=44) (actual time=0.027..0.027 rows=0 loops=1)
+               Index Cond: ((provider = 'ONEPAY'::text) AND (updated_at >= '2026-09-01 00:00:00+00'::timestamp with time zone))
+               Buffers: shared read=2
+         ->  Index Scan using canonical_event_20260926_provider_updated_at_idx on canonical_event_20260926 canonical_event_9  (cost=0.29..6.05 rows=1 width=46) (actual time=0.028..0.028 rows=0 loops=1)
+               Index Cond: ((provider = 'ONEPAY'::text) AND (updated_at >= '2026-09-01 00:00:00+00'::timestamp with time zone))
+               Buffers: shared read=2
+         ->  Index Scan using canonical_event_20260927_provider_updated_at_idx on canonical_event_20260927 canonical_event_10  (cost=0.29..740.26 rows=9999 width=42) (actual time=0.043..0.043 rows=1 loops=1)
+               Index Cond: ((provider = 'ONEPAY'::text) AND (updated_at >= '2026-09-01 00:00:00+00'::timestamp with time zone))
+               Buffers: shared hit=1 read=2
+         ->  Index Scan using canonical_event_20260928_provider_updated_at_idx on canonical_event_20260928 canonical_event_11  (cost=0.29..6.05 rows=1 width=45) (actual time=0.030..0.030 rows=0 loops=1)
+               Index Cond: ((provider = 'ONEPAY'::text) AND (updated_at >= '2026-09-01 00:00:00+00'::timestamp with time zone))
+               Buffers: shared read=2
+         ->  Index Scan using canonical_event_20260929_provider_updated_at_idx on canonical_event_20260929 canonical_event_12  (cost=0.29..6.05 rows=1 width=45) (actual time=0.029..0.029 rows=0 loops=1)
+               Index Cond: ((provider = 'ONEPAY'::text) AND (updated_at >= '2026-09-01 00:00:00+00'::timestamp with time zone))
+               Buffers: shared read=2
+         ->  Index Scan using canonical_event_20260930_provider_updated_at_idx on canonical_event_20260930 canonical_event_13  (cost=0.29..740.26 rows=9999 width=43) (actual time=0.043..0.152 rows=100 loops=1)
+               Index Cond: ((provider = 'ONEPAY'::text) AND (updated_at >= '2026-09-01 00:00:00+00'::timestamp with time zone))
+               Buffers: shared hit=100 read=2
+         ->  Index Scan using canonical_event_20261001_provider_updated_at_idx on canonical_event_20261001 canonical_event_14  (cost=0.12..8.14 rows=1 width=108) (actual time=0.007..0.007 rows=0 loops=1)
+               Index Cond: ((provider = 'ONEPAY'::text) AND (updated_at >= '2026-09-01 00:00:00+00'::timestamp with time zone))
+               Buffers: shared hit=2
+         ->  Index Scan using canonical_event_20261002_provider_updated_at_idx on canonical_event_20261002 canonical_event_15  (cost=0.12..8.14 rows=1 width=108) (actual time=0.007..0.007 rows=0 loops=1)
+               Index Cond: ((provider = 'ONEPAY'::text) AND (updated_at >= '2026-09-01 00:00:00+00'::timestamp with time zone))
+               Buffers: shared hit=2
+         ->  Index Scan using canonical_event_default_provider_updated_at_idx on canonical_event_default canonical_event_16  (cost=0.42..14275.55 rows=50264 width=43) (actual time=0.055..0.055 rows=1 loops=1)
+               Index Cond: ((provider = 'ONEPAY'::text) AND (updated_at >= '2026-09-01 00:00:00+00'::timestamp with time zone))
+               Buffers: shared hit=1 read=3
+ Planning:
+   Buffers: shared hit=399 read=4
+ Planning Time: 2.265 ms
+ Execution Time: 0.861 ms
+(57 rows)
+
+Time: 4.078 ms

@@ -8,7 +8,7 @@ datasources:
     url: postgres:5432
     user: paymenthub
     secureJsonData:
-      password: ${POSTGRES_PASSWORD}
+      password: $POSTGRES_PASSWORD
     jsonData:
       database: paymenthub
       sslmode: disable
